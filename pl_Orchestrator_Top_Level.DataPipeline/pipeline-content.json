@@ -145,7 +145,7 @@
                   }
                 ]
               },
-              "name": "Any Tasks Ready?",
+              "name": "Any Tasks Ready",
               "dependsOn": [
                 {
                   "activity": "Get Next Wave",
@@ -204,7 +204,7 @@
               "name": "Get Run Status",
               "dependsOn": [
                 {
-                  "activity": "Any Tasks Ready?",
+                  "activity": "Any Tasks Ready",
                   "dependencyConditions": [
                     "Succeeded"
                   ]
