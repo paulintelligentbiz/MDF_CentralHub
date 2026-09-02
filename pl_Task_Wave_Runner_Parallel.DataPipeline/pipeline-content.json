@@ -12,56 +12,27 @@
           },
           "activities": [
             {
-              "type": "InvokePipeline",
+              "type": "ExecutePipeline",
               "typeProperties": {
-                "pipelineId": "41e13000-b183-4db1-a88b-35500fdf1001",
-                "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                "pipeline": {
+                  "referenceName": "41e13000-b183-4db1-a88b-35500fdf1001",
+                  "type": "PipelineReference"
+                },
                 "waitOnCompletion": true,
                 "parameters": {
-                  "JobName": {
-                    "value": "@pipeline().parameters.JobName",
-                    "type": "Expression"
-                  },
-                  "TaskName": {
-                    "value": "@item().TaskName",
-                    "type": "Expression"
-                  },
-                  "ObjectName": {
-                    "value": "@item().ObjectName",
-                    "type": "Expression"
-                  },
-                  "WorkspaceName": {
-                    "value": "@item().WorkspaceName",
-                    "type": "Expression"
-                  },
-                  "TaskType": {
-                    "value": "@item().TaskType",
-                    "type": "Expression"
-                  },
-                  "ParametersJson": {
-                    "value": "@item().ParametersJson",
-                    "type": "Expression"
-                  },
-                  "RunID": {
-                    "value": "@pipeline().parameters.RunID",
-                    "type": "Expression"
-                  },
-                  "ObjectID": {
-                    "value": "@item().ObjectID",
-                    "type": "Expression"
-                  },
-                  "WorkspaceID": {
-                    "value": "@item().WorkspaceID",
-                    "type": "Expression"
-                  }
+                  "JobName": "@pipeline().parameters.JobName",
+                  "TaskName": "@item().TaskName",
+                  "ObjectName": "@item().ObjectName",
+                  "WorkspaceName": "@item().WorkspaceName",
+                  "TaskType": "@item().TaskType",
+                  "ParametersJson": "@item().ParametersJson",
+                  "RunID": "@pipeline().parameters.RunID",
+                  "ObjectID": "@item().ObjectID",
+                  "WorkspaceID": "@item().WorkspaceID"
                 }
               },
               "policy": {
-                "timeout": "0.12:00:00",
-                "retry": 0,
-                "retryIntervalInSeconds": 30,
-                "secureInput": false,
-                "secureOutput": false
+                "secureInput": false
               },
               "name": "Run pl_Task_Executor",
               "dependsOn": []
