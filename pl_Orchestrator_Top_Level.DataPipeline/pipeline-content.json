@@ -1,5 +1,281 @@
 {
   "properties": {
-    "activities": []
+    "activities": [
+      {
+        "type": "SetVariable",
+        "typeProperties": {
+          "variableName": "RunID",
+          "value": {
+            "value": "@pipeline().RunId",
+            "type": "Expression"
+          }
+        },
+        "name": "Init RunID",
+        "dependsOn": []
+      },
+      {
+        "type": "Until",
+        "typeProperties": {
+          "expression": {
+            "value": "@equals(variables('Done'), true)",
+            "type": "Expression"
+          },
+          "activities": [
+            {
+              "type": "Lookup",
+              "typeProperties": {
+                "source": {
+                  "type": "FabricSqlDatabaseSource",
+                  "sqlReaderStoredProcedureName": "orch.spGetNextWave",
+                  "storedProcedureParameters": {
+                    "JobName": {
+                      "value": {
+                        "value": "@pipeline().parameters.JobName",
+                        "type": "Expression"
+                      },
+                      "type": "String"
+                    },
+                    "RunID": {
+                      "value": {
+                        "value": "@variables('RunID')",
+                        "type": "Expression"
+                      },
+                      "type": "String"
+                    }
+                  }
+                },
+                "firstRowOnly": true
+              },
+              "connectionSettings": {
+                "name": "db_Metadata",
+                "properties": {
+                  "type": "FabricSqlDatabase",
+                  "typeProperties": {
+                    "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "externalReferences": {
+                    "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                  },
+                  "annotations": []
+                }
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "Get Next Wave",
+              "dependsOn": []
+            },
+            {
+              "type": "IfCondition",
+              "typeProperties": {
+                "expression": {
+                  "value": "@greater(activity('Get Next Wave').output.firstRow.TaskCount, 0)",
+                  "type": "Expression"
+                },
+                "ifTrueActivities": [
+                  {
+                    "type": "Switch",
+                    "typeProperties": {
+                      "on": {
+                        "value": "@activity('Get Next Wave').output.firstRow.ExecutionMode",
+                        "type": "Expression"
+                      },
+                      "cases": [
+                        {
+                          "value": "Sequential",
+                          "activities": [
+                            {
+                              "type": "InvokePipeline",
+                              "typeProperties": {
+                                "pipelineId": "f943135f-65df-4ea5-b5b3-5dd6580d4031",
+                                "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                  "JobName": {
+                                    "value": "@pipeline().parameters.JobName",
+                                    "type": "Expression"
+                                  },
+                                  "RunID": {
+                                    "value": "@variables('RunID')",
+                                    "type": "Expression"
+                                  },
+                                  "TasksJson": {
+                                    "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
+                                    "type": "Expression"
+                                  }
+                                }
+                              },
+                              "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureInput": false,
+                                "secureOutput": false
+                              },
+                              "name": "Run Sequential Wave",
+                              "dependsOn": []
+                            }
+                          ]
+                        },
+                        {
+                          "value": "Parallel",
+                          "activities": [
+                            {
+                              "type": "InvokePipeline",
+                              "typeProperties": {
+                                "pipelineId": "e6b4f5e7-53ca-488e-a77f-db872449b1cd",
+                                "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                  "JobName": {
+                                    "value": "@pipeline().parameters.JobName",
+                                    "type": "Expression"
+                                  },
+                                  "RunID": {
+                                    "value": "@variables('RunID')",
+                                    "type": "Expression"
+                                  },
+                                  "TasksJson": {
+                                    "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
+                                    "type": "Expression"
+                                  }
+                                }
+                              },
+                              "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureInput": false,
+                                "secureOutput": false
+                              },
+                              "name": "Run Parallel Wave",
+                              "dependsOn": []
+                            }
+                          ]
+                        }
+                      ],
+                      "defaultActivities": []
+                    },
+                    "name": "Switch On Execution Mode",
+                    "dependsOn": []
+                  }
+                ]
+              },
+              "name": "Any Tasks Ready?",
+              "dependsOn": [
+                {
+                  "activity": "Get Next Wave",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Lookup",
+              "typeProperties": {
+                "source": {
+                  "type": "FabricSqlDatabaseSource",
+                  "sqlReaderStoredProcedureName": "orch.spGetRunStatus",
+                  "storedProcedureParameters": {
+                    "JobName": {
+                      "value": {
+                        "value": "@pipeline().parameters.JobName",
+                        "type": "Expression"
+                      },
+                      "type": "String"
+                    },
+                    "RunID": {
+                      "value": {
+                        "value": "@variables('RunID')",
+                        "type": "Expression"
+                      },
+                      "type": "String"
+                    }
+                  }
+                },
+                "firstRowOnly": true
+              },
+              "connectionSettings": {
+                "name": "db_Metadata",
+                "properties": {
+                  "type": "FabricSqlDatabase",
+                  "typeProperties": {
+                    "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000"
+                  },
+                  "externalReferences": {
+                    "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                  },
+                  "annotations": []
+                }
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "Get Run Status",
+              "dependsOn": [
+                {
+                  "activity": "Any Tasks Ready?",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SetVariable",
+              "typeProperties": {
+                "variableName": "Done",
+                "value": {
+                  "value": "@or(equals(activity('Get Run Status').output.firstRow.RunStatus, 'Complete'), equals(activity('Get Run Status').output.firstRow.RunStatus, 'Failed'))",
+                  "type": "Expression"
+                }
+              },
+              "name": "Update Done",
+              "dependsOn": [
+                {
+                  "activity": "Get Run Status",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "name": "Until All Tasks Done",
+        "dependsOn": [
+          {
+            "activity": "Init RunID",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "parameters": {
+      "JobName": {
+        "type": "string"
+      }
+    },
+    "variables": {
+      "RunID": {
+        "type": "String"
+      },
+      "Done": {
+        "type": "Boolean"
+      }
+    }
   }
 }
