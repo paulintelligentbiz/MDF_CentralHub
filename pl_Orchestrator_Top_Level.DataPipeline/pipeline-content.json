@@ -94,7 +94,7 @@
                               "type": "ExecutePipeline",
                               "typeProperties": {
                                 "pipeline": {
-                                  "referenceName": "f943135f-65df-4ea5-b5b3-5dd6580d4031",
+                                  "referenceName": "580d4031-5dd6-b5b3-4ea5-65dff943135f",
                                   "type": "PipelineReference"
                                 },
                                 "waitOnCompletion": true,
@@ -119,7 +119,7 @@
                               "type": "ExecutePipeline",
                               "typeProperties": {
                                 "pipeline": {
-                                  "referenceName": "e6b4f5e7-53ca-488e-a77f-db872449b1cd",
+                                  "referenceName": "2449b1cd-db87-a77f-488e-53cae6b4f5e7",
                                   "type": "PipelineReference"
                                 },
                                 "waitOnCompletion": true,

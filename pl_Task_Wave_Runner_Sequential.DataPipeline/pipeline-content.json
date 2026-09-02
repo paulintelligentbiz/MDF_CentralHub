@@ -14,7 +14,7 @@
               "type": "ExecutePipeline",
               "typeProperties": {
                 "pipeline": {
-                  "referenceName": "41e13000-b183-4db1-a88b-35500fdf1001",
+                  "referenceName": "0fdf1001-3550-a88b-4db1-b18341e13000",
                   "type": "PipelineReference"
                 },
                 "waitOnCompletion": true,
