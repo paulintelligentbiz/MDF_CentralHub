@@ -49,11 +49,11 @@
                       "annotations": [],
                       "type": "FabricSqlDatabase",
                       "typeProperties": {
-                        "workspaceId": "00000000-0000-0000-0000-000000000000",
-                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c"
+                        "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                        "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
                       },
                       "externalReferences": {
-                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                        "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
                       }
                     }
                   },
@@ -182,11 +182,11 @@
                       "annotations": [],
                       "type": "FabricSqlDatabase",
                       "typeProperties": {
-                        "workspaceId": "00000000-0000-0000-0000-000000000000",
-                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c"
+                        "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                        "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
                       },
                       "externalReferences": {
-                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                        "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
                       }
                     }
                   },
