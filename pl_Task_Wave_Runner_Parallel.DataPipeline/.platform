@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "DataPipeline",
+    "displayName": "pl_Task_Wave_Runner_Parallel"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "2449b1cd-db87-a77f-488e-53cae6b4f5e7"
+  }
+}

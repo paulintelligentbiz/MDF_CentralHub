@@ -1,0 +1,254 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "Switch",
+        "typeProperties": {
+          "on": {
+            "value": "@pipeline().parameters.TaskType",
+            "type": "Expression"
+          },
+          "cases": [
+            {
+              "value": "CopyJob",
+              "activities": [
+                {
+                  "type": "InvokeCopyJob",
+                  "typeProperties": {
+                    "copyJobId": {
+                      "value": "@pipeline().parameters.ObjectID",
+                      "type": "Expression"
+                    },
+                    "workspaceId": {
+                      "value": "@pipeline().parameters.WorkspaceID",
+                      "type": "Expression"
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Run Copy Job",
+                  "state": "Inactive",
+                  "onInactiveMarkAs": "Succeeded",
+                  "dependsOn": []
+                }
+              ]
+            },
+            {
+              "value": "Notebook",
+              "activities": [
+                {
+                  "type": "TridentNotebook",
+                  "typeProperties": {
+                    "notebookId": {
+                      "value": "@pipeline().parameters.ObjectID",
+                      "type": "Expression"
+                    },
+                    "workspaceId": {
+                      "value": "@pipeline().parameters.WorkspaceID",
+                      "type": "Expression"
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Run Notebook",
+                  "dependsOn": []
+                }
+              ]
+            },
+            {
+              "value": "StoredProcedure",
+              "activities": [
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": {
+                      "value": "@pipeline().parameters.ObjectName",
+                      "type": "Expression"
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Run Stored Procedure",
+                  "dependsOn": []
+                }
+              ]
+            },
+            {
+              "value": "Dataflow",
+              "activities": [
+                {
+                  "type": "RefreshDataflow",
+                  "typeProperties": {
+                    "dataflowId": {
+                      "value": "@pipeline().parameters.ObjectID",
+                      "type": "Expression"
+                    },
+                    "workspaceId": {
+                      "value": "@pipeline().parameters.WorkspaceID",
+                      "type": "Expression"
+                    },
+                    "notifyOption": "NoNotification"
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Run Dataflow",
+                  "dependsOn": []
+                }
+              ]
+            },
+            {
+              "value": "Pipeline",
+              "activities": [
+                {
+                  "type": "Fail",
+                  "typeProperties": {
+                    "message": "TaskType 'Pipeline' (nested Job invocation) is not yet supported by pl_Task_Executor.",
+                    "errorCode": "UnsupportedTaskType"
+                  },
+                  "name": "Fail Unsupported Task Type",
+                  "dependsOn": []
+                }
+              ]
+            }
+          ],
+          "defaultActivities": []
+        },
+        "name": "Switch On Task Type",
+        "dependsOn": []
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spLogPipelineRunEvent",
+          "storedProcedureParameters": {
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "RunID": {
+              "value": {
+                "value": "@pipeline().parameters.RunID",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "Status": {
+              "value": "Succeeded",
+              "type": "String"
+            },
+            "TaskName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Task Success",
+        "dependsOn": [
+          {
+            "activity": "Switch On Task Type",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "parameters": {
+      "JobName": {
+        "type": "string"
+      },
+      "TaskName": {
+        "type": "string"
+      },
+      "ObjectName": {
+        "type": "string"
+      },
+      "WorkspaceName": {
+        "type": "string"
+      },
+      "TaskType": {
+        "type": "string"
+      },
+      "ParametersJson": {
+        "type": "string"
+      },
+      "RunID": {
+        "type": "string"
+      },
+      "ObjectID": {
+        "type": "string"
+      },
+      "WorkspaceID": {
+        "type": "string"
+      }
+    }
+  }
+}
