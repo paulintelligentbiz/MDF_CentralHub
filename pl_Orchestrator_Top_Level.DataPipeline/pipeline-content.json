@@ -15,6 +15,94 @@
         "dependsOn": []
       },
       {
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "FabricSqlDatabaseSource",
+            "sqlReaderStoredProcedureName": "log.spLogPipelineRunEvent",
+            "storedProcedureParameters": {
+              "RunID": {
+                "type": "String",
+                "value": "@variables('RunID')"
+              },
+              "JobName": {
+                "type": "String",
+                "value": "@pipeline().parameters.JobName"
+              },
+              "Status": {
+                "type": "String",
+                "value": "Running"
+              },
+              "EventStatus": {
+                "type": "String",
+                "value": "Started"
+              },
+              "StartTimeUtc": {
+                "type": "String",
+                "value": "@utcnow()"
+              }
+            },
+            "queryTimeout": "02:00:00",
+            "partitionOption": "None"
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "connectionSettings": {
+              "name": "db_Metadata",
+              "properties": {
+                "annotations": [],
+                "type": "FabricSqlDatabase",
+                "typeProperties": {
+                  "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                  "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+                },
+                "externalReferences": {
+                  "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+                }
+              }
+            },
+            "type": "FabricSqlDatabaseTable",
+            "schema": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "name": "Log Job Start",
+        "dependsOn": [
+          {
+            "activity": "Init RunID",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "SetVariable",
+        "typeProperties": {
+          "variableName": "JobRunLogId",
+          "value": "@string(activity('Log Job Start').output.firstRow.RunLogId)"
+        },
+        "policy": {
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "name": "Set Job RunLogId",
+        "dependsOn": [
+          {
+            "activity": "Log Job Start",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
         "type": "Until",
         "typeProperties": {
           "expression": {
@@ -214,6 +302,26 @@
             {
               "type": "SetVariable",
               "typeProperties": {
+                "variableName": "FinalStatus",
+                "value": "@activity('Get Run Status').output.firstRow.RunStatus"
+              },
+              "policy": {
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "name": "Set Final Status",
+              "dependsOn": [
+                {
+                  "activity": "Get Run Status",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SetVariable",
+              "typeProperties": {
                 "variableName": "Done",
                 "value": "@or(equals(activity('Get Run Status').output.firstRow.RunStatus, 'Complete'), equals(activity('Get Run Status').output.firstRow.RunStatus, 'Failed'))"
               },
@@ -237,7 +345,66 @@
         "name": "Until All Tasks Done",
         "dependsOn": [
           {
-            "activity": "Init RunID",
+            "activity": "Set Job RunLogId",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spInsertJobRunEvent",
+          "storedProcedureParameters": {
+            "RunLogId": {
+              "value": {
+                "value": "@int(variables('JobRunLogId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
+            },
+            "Status": {
+              "value": {
+                "value": "@variables('FinalStatus')",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "EndTimeUtc": {
+              "value": {
+                "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "annotations": [],
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+              "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+            },
+            "externalReferences": {
+              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Job End",
+        "dependsOn": [
+          {
+            "activity": "Until All Tasks Done",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -256,6 +423,12 @@
       },
       "Done": {
         "type": "Boolean"
+      },
+      "JobRunLogId": {
+        "type": "String"
+      },
+      "FinalStatus": {
+        "type": "String"
       }
     }
   }

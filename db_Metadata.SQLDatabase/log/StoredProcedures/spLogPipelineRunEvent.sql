@@ -32,8 +32,10 @@ BEGIN
 
     SET @RunLogId = SCOPE_IDENTITY();
 
-    INSERT INTO log.PipelineRunEvent (RunLogId, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
+    INSERT INTO log.JobRunEvent (RunLogId, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
     VALUES (@RunLogId, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @EventStatus, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
+
+    SELECT @RunLogId AS RunLogId;
 END;
 
 GO

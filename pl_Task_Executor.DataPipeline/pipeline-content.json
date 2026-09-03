@@ -2,6 +2,101 @@
   "properties": {
     "activities": [
       {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spLogActivityRunEvent",
+          "storedProcedureParameters": {
+            "RunID": {
+              "value": {
+                "value": "@pipeline().parameters.RunID",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "Status": {
+              "value": "Running",
+              "type": "String"
+            },
+            "EventStatus": {
+              "value": "Started",
+              "type": "String"
+            },
+            "ActivityName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "PipelineRunId": {
+              "value": {
+                "value": "@pipeline().RunId",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityRunStart": {
+              "value": {
+                "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Task Start",
+        "dependsOn": []
+      },
+      {
         "type": "Switch",
         "typeProperties": {
           "on": {
@@ -148,12 +243,19 @@
           "defaultActivities": []
         },
         "name": "Switch On Task Type",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "Log Task Start",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       },
       {
         "type": "SqlServerStoredProcedure",
         "typeProperties": {
-          "storedProcedureName": "log.spLogPipelineRunEvent",
+          "storedProcedureName": "log.spLogActivityRunEvent",
           "storedProcedureParameters": {
             "JobName": {
               "value": {
@@ -173,6 +275,10 @@
               "value": "Succeeded",
               "type": "String"
             },
+            "EventStatus": {
+              "value": "Succeeded",
+              "type": "String"
+            },
             "TaskName": {
               "value": {
                 "value": "@pipeline().parameters.TaskName",
@@ -183,6 +289,34 @@
             "TaskType": {
               "value": {
                 "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "PipelineRunId": {
+              "value": {
+                "value": "@pipeline().RunId",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityRunEnd": {
+              "value": {
+                "value": "@utcnow()",
                 "type": "Expression"
               },
               "type": "String"
