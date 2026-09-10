@@ -103,6 +103,29 @@
         ]
       },
       {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "PENDING_DEPLOYMENT_REPLACE_ME_nb_RefreshObjectIDs",
+          "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Refresh ObjectIDs",
+        "dependsOn": [
+          {
+            "activity": "Set Job RunLogId",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
         "type": "Until",
         "typeProperties": {
           "expression": {
@@ -345,7 +368,7 @@
         "name": "Until All Tasks Done",
         "dependsOn": [
           {
-            "activity": "Set Job RunLogId",
+            "activity": "Refresh ObjectIDs",
             "dependencyConditions": [
               "Succeeded"
             ]

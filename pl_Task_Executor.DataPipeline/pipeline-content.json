@@ -146,6 +146,15 @@
                     "workspaceId": {
                       "value": "@pipeline().parameters.WorkspaceID",
                       "type": "Expression"
+                    },
+                    "parameters": {
+                      "ParametersJson": {
+                        "value": {
+                          "value": "@pipeline().parameters.ParametersJson",
+                          "type": "Expression"
+                        },
+                        "type": "string"
+                      }
                     }
                   },
                   "policy": {
