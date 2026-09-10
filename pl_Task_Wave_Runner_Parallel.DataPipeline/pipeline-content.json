@@ -18,7 +18,6 @@
                   "referenceName": "0fdf1001-3550-a88b-4db1-b18341e13000",
                   "type": "PipelineReference"
                 },
-                "waitOnCompletion": true,
                 "parameters": {
                   "JobName": "@pipeline().parameters.JobName",
                   "TaskName": "@item().TaskName",
@@ -29,7 +28,8 @@
                   "RunID": "@pipeline().parameters.RunID",
                   "ObjectID": "@item().ObjectID",
                   "WorkspaceID": "@item().WorkspaceID"
-                }
+                },
+                "waitOnCompletion": true
               },
               "policy": {
                 "secureInput": false

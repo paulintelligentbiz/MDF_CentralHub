@@ -8,8 +8,8 @@
           "value": "@pipeline().RunId"
         },
         "policy": {
-          "secureOutput": false,
-          "secureInput": false
+          "secureInput": false,
+          "secureOutput": false
         },
         "name": "Init RunID",
         "dependsOn": []
@@ -22,55 +22,55 @@
             "sqlReaderStoredProcedureName": "log.spLogPipelineRunEvent",
             "storedProcedureParameters": {
               "RunID": {
-                "type": "String",
-                "value": "@variables('RunID')"
+                "value": "@variables('RunID')",
+                "type": "String"
               },
               "JobName": {
-                "type": "String",
-                "value": "@pipeline().parameters.JobName"
+                "value": "@pipeline().parameters.JobName",
+                "type": "String"
               },
               "Status": {
-                "type": "String",
-                "value": "Running"
+                "value": "Running",
+                "type": "String"
               },
               "EventStatus": {
-                "type": "String",
-                "value": "Started"
+                "value": "Started",
+                "type": "String"
               },
               "StartTimeUtc": {
-                "type": "String",
-                "value": "@utcnow()"
+                "value": "@utcnow()",
+                "type": "String"
               }
             },
-            "queryTimeout": "02:00:00",
-            "partitionOption": "None"
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00"
           },
           "datasetSettings": {
-            "annotations": [],
+            "type": "FabricSqlDatabaseTable",
+            "schema": [],
             "connectionSettings": {
               "name": "db_Metadata",
               "properties": {
-                "annotations": [],
                 "type": "FabricSqlDatabase",
                 "typeProperties": {
-                  "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
-                  "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+                  "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                  "workspaceId": "00000000-0000-0000-0000-000000000000"
                 },
                 "externalReferences": {
                   "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
-                }
+                },
+                "annotations": []
               }
             },
-            "type": "FabricSqlDatabaseTable",
-            "schema": []
+            "annotations": []
           }
         },
         "policy": {
           "timeout": "0.12:00:00",
           "retry": 0,
           "retryIntervalInSeconds": 30,
-          "secureOutput": false,
-          "secureInput": false
+          "secureInput": false,
+          "secureOutput": false
         },
         "name": "Log Job Start",
         "dependsOn": [
@@ -89,36 +89,13 @@
           "value": "@string(activity('Log Job Start').output.firstRow.RunLogId)"
         },
         "policy": {
-          "secureOutput": false,
-          "secureInput": false
+          "secureInput": false,
+          "secureOutput": false
         },
         "name": "Set Job RunLogId",
         "dependsOn": [
           {
             "activity": "Log Job Start",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
-      },
-      {
-        "type": "TridentNotebook",
-        "typeProperties": {
-          "notebookId": "PENDING_DEPLOYMENT_REPLACE_ME_nb_RefreshObjectIDs",
-          "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f"
-        },
-        "policy": {
-          "timeout": "0.12:00:00",
-          "retry": 0,
-          "retryIntervalInSeconds": 30,
-          "secureInput": false,
-          "secureOutput": false
-        },
-        "name": "Refresh ObjectIDs",
-        "dependsOn": [
-          {
-            "activity": "Set Job RunLogId",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -132,6 +109,7 @@
             "value": "@equals(variables('Done'), true)",
             "type": "Expression"
           },
+          "timeout": "0.12:00:00",
           "activities": [
             {
               "type": "Lookup",
@@ -141,43 +119,43 @@
                   "sqlReaderStoredProcedureName": "orch.spGetNextWave",
                   "storedProcedureParameters": {
                     "JobName": {
-                      "type": "String",
-                      "value": "@pipeline().parameters.JobName"
+                      "value": "@pipeline().parameters.JobName",
+                      "type": "String"
                     },
                     "RunID": {
-                      "type": "String",
-                      "value": "@variables('RunID')"
+                      "value": "@variables('RunID')",
+                      "type": "String"
                     }
                   },
-                  "queryTimeout": "02:00:00",
-                  "partitionOption": "None"
+                  "partitionOption": "None",
+                  "queryTimeout": "02:00:00"
                 },
                 "datasetSettings": {
-                  "annotations": [],
+                  "type": "FabricSqlDatabaseTable",
+                  "schema": [],
                   "connectionSettings": {
                     "name": "db_Metadata",
                     "properties": {
-                      "annotations": [],
                       "type": "FabricSqlDatabase",
                       "typeProperties": {
-                        "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
-                        "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
                       },
                       "externalReferences": {
                         "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
-                      }
+                      },
+                      "annotations": []
                     }
                   },
-                  "type": "FabricSqlDatabaseTable",
-                  "schema": []
+                  "annotations": []
                 }
               },
               "policy": {
                 "timeout": "0.12:00:00",
                 "retry": 0,
                 "retryIntervalInSeconds": 30,
-                "secureOutput": false,
-                "secureInput": false
+                "secureInput": false,
+                "secureOutput": false
               },
               "name": "Get Next Wave",
               "dependsOn": []
@@ -208,12 +186,12 @@
                                   "referenceName": "580d4031-5dd6-b5b3-4ea5-65dff943135f",
                                   "type": "PipelineReference"
                                 },
-                                "waitOnCompletion": true,
                                 "parameters": {
                                   "JobName": "@pipeline().parameters.JobName",
                                   "RunID": "@variables('RunID')",
                                   "TasksJson": "@activity('Get Next Wave').output.firstRow.TasksJson"
-                                }
+                                },
+                                "waitOnCompletion": true
                               },
                               "policy": {
                                 "secureInput": false
@@ -233,12 +211,12 @@
                                   "referenceName": "2449b1cd-db87-a77f-488e-53cae6b4f5e7",
                                   "type": "PipelineReference"
                                 },
-                                "waitOnCompletion": true,
                                 "parameters": {
                                   "JobName": "@pipeline().parameters.JobName",
                                   "RunID": "@variables('RunID')",
                                   "TasksJson": "@activity('Get Next Wave').output.firstRow.TasksJson"
-                                }
+                                },
+                                "waitOnCompletion": true
                               },
                               "policy": {
                                 "secureInput": false
@@ -274,43 +252,43 @@
                   "sqlReaderStoredProcedureName": "orch.spGetRunStatus",
                   "storedProcedureParameters": {
                     "JobName": {
-                      "type": "String",
-                      "value": "@pipeline().parameters.JobName"
+                      "value": "@pipeline().parameters.JobName",
+                      "type": "String"
                     },
                     "RunID": {
-                      "type": "String",
-                      "value": "@variables('RunID')"
+                      "value": "@variables('RunID')",
+                      "type": "String"
                     }
                   },
-                  "queryTimeout": "02:00:00",
-                  "partitionOption": "None"
+                  "partitionOption": "None",
+                  "queryTimeout": "02:00:00"
                 },
                 "datasetSettings": {
-                  "annotations": [],
+                  "type": "FabricSqlDatabaseTable",
+                  "schema": [],
                   "connectionSettings": {
                     "name": "db_Metadata",
                     "properties": {
-                      "annotations": [],
                       "type": "FabricSqlDatabase",
                       "typeProperties": {
-                        "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
-                        "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
                       },
                       "externalReferences": {
                         "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
-                      }
+                      },
+                      "annotations": []
                     }
                   },
-                  "type": "FabricSqlDatabaseTable",
-                  "schema": []
+                  "annotations": []
                 }
               },
               "policy": {
                 "timeout": "0.12:00:00",
                 "retry": 0,
                 "retryIntervalInSeconds": 30,
-                "secureOutput": false,
-                "secureInput": false
+                "secureInput": false,
+                "secureOutput": false
               },
               "name": "Get Run Status",
               "dependsOn": [
@@ -329,8 +307,8 @@
                 "value": "@activity('Get Run Status').output.firstRow.RunStatus"
               },
               "policy": {
-                "secureOutput": false,
-                "secureInput": false
+                "secureInput": false,
+                "secureOutput": false
               },
               "name": "Set Final Status",
               "dependsOn": [
@@ -349,8 +327,8 @@
                 "value": "@or(equals(activity('Get Run Status').output.firstRow.RunStatus, 'Complete'), equals(activity('Get Run Status').output.firstRow.RunStatus, 'Failed'))"
               },
               "policy": {
-                "secureOutput": false,
-                "secureInput": false
+                "secureInput": false,
+                "secureOutput": false
               },
               "name": "Update Done",
               "dependsOn": [
@@ -362,13 +340,12 @@
                 }
               ]
             }
-          ],
-          "timeout": "0.12:00:00"
+          ]
         },
         "name": "Until All Tasks Done",
         "dependsOn": [
           {
-            "activity": "Refresh ObjectIDs",
+            "activity": "Set Job RunLogId",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -406,15 +383,15 @@
         "connectionSettings": {
           "name": "db_Metadata",
           "properties": {
-            "annotations": [],
             "type": "FabricSqlDatabase",
             "typeProperties": {
-              "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
-              "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
             },
             "externalReferences": {
               "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
-            }
+            },
+            "annotations": []
           }
         },
         "policy": {

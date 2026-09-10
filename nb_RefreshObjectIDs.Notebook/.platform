@@ -1,11 +1,12 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
   "metadata": {
-    "type": "DataPipeline",
-    "displayName": "pl_Orchestrator_Top_Level"
+    "type": "Notebook",
+    "displayName": "nb_RefreshObjectIDs",
+    "description": "New notebook"
   },
   "config": {
     "version": "2.0",
-    "logicalId": "03015381-f77e-8b1d-448f-614ccf0adcce"
+    "logicalId": "2cf8087d-6bf6-9f90-40b7-b1bee19e60e3"
   }
 }

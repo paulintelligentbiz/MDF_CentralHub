@@ -1,6 +1,5 @@
-CREATE TABLE [log].[JobRunEvent] (
+CREATE TABLE [log].[PipelineRunEvent] (
     [RunLogId]       BIGINT         NOT NULL,
-    [JobName]        VARCHAR (200)  NOT NULL,
     [LoggingLevel]   TINYINT        NOT NULL,
     [JobInstanceId]  NVARCHAR (100) NULL,
     [ItemId]         NVARCHAR (100) NULL,
@@ -11,10 +10,9 @@ CREATE TABLE [log].[JobRunEvent] (
     [StartTimeUtc]   DATETIME2 (7)  NULL,
     [EndTimeUtc]     DATETIME2 (7)  NULL,
     [FailureReason]  NVARCHAR (MAX) NULL,
-    CONSTRAINT [PK_JobRunEvent] PRIMARY KEY CLUSTERED ([RunLogId] ASC),
-    CONSTRAINT [FK_JobRunEvent_JobName] FOREIGN KEY ([JobName]) REFERENCES [orch].[Jobs] ([JobName]),
-    CONSTRAINT [FK_JobRunEvent_LoggingLevel] FOREIGN KEY ([LoggingLevel]) REFERENCES [log].[LoggingLevel] ([LoggingLevel]),
-    CONSTRAINT [FK_JobRunEvent_RunLog] FOREIGN KEY ([RunLogId]) REFERENCES [log].[RunLog] ([RunLogId])
+    CONSTRAINT [PK_PipelineRunEvent] PRIMARY KEY CLUSTERED ([RunLogId] ASC),
+    CONSTRAINT [FK_PipelineRunEvent_LoggingLevel] FOREIGN KEY ([LoggingLevel]) REFERENCES [log].[LoggingLevel] ([LoggingLevel]),
+    CONSTRAINT [FK_PipelineRunEvent_RunLog] FOREIGN KEY ([RunLogId]) REFERENCES [log].[RunLog] ([RunLogId])
 );
 
 

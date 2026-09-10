@@ -77,11 +77,11 @@
           "properties": {
             "type": "FabricSqlDatabase",
             "typeProperties": {
-              "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709",
-              "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f"
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
             },
             "externalReferences": {
-              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
             },
             "annotations": []
           }
@@ -146,15 +146,6 @@
                     "workspaceId": {
                       "value": "@pipeline().parameters.WorkspaceID",
                       "type": "Expression"
-                    },
-                    "parameters": {
-                      "ParametersJson": {
-                        "value": {
-                          "value": "@pipeline().parameters.ParametersJson",
-                          "type": "Expression"
-                        },
-                        "type": "string"
-                      }
                     }
                   },
                   "policy": {
@@ -337,11 +328,11 @@
           "properties": {
             "type": "FabricSqlDatabase",
             "typeProperties": {
-              "artifactId": "15a01d6c-0d70-4a2d-b4da-28b809849709",
-              "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f"
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
             },
             "externalReferences": {
-              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
             },
             "annotations": []
           }
