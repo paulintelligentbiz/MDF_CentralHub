@@ -9,7 +9,7 @@
 
 ## Schema: `orch`
 
-Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. The four core tables (`Jobs`, `Tasks`, `TaskType`, `ObjectIDs`) are the ones kept in sync with `orch_metadata.xlsx` via `nb_Metadata_Sync`; the dependency tables are database-only (not part of the Excel sync).
+Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. All seven tables (`Jobs`, `Tasks`, `TaskType`, `ObjectIDs`, `DependencyCondition`, `JobDependencies`, `TaskDependencies`) are kept in sync with `orch_metadata.xlsx` via `nb_Metadata_Sync` — `TABLE_SPECS` lists them parent-first (`DependencyCondition` before the two dependency-edge tables, which reference it) so upserts and deletes respect the foreign keys.
 
 ### orch.Jobs
 

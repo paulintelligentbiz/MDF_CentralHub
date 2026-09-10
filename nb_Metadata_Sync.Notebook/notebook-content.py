@@ -195,6 +195,27 @@ TABLE_SPECS = [
         "bit_columns": ["Include"],
         "time_columns": [],
     },
+    {
+        "sheet": "DependencyCondition", "schema": "orch", "table": "DependencyCondition",
+        "pk": ["DependencyCondition"],
+        "columns": ["DependencyCondition"],
+        "bit_columns": [],
+        "time_columns": [],
+    },
+    {
+        "sheet": "JobDependencies", "schema": "orch", "table": "JobDependencies",
+        "pk": ["JobName", "DependentJobName"],
+        "columns": ["JobName", "DependentJobName", "DependsOn"],
+        "bit_columns": [],
+        "time_columns": [],
+    },
+    {
+        "sheet": "TaskDependencies", "schema": "orch", "table": "TaskDependencies",
+        "pk": ["TaskName", "DependentTaskName"],
+        "columns": ["TaskName", "DependentTaskName", "DependsOn"],
+        "bit_columns": [],
+        "time_columns": [],
+    },
 ]
 
 
@@ -506,6 +527,94 @@ print(_url)
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# CELL ********************
+
+# --- One-off: regenerate orch.Tasks from the live ContosoDW-DEV table list ---
+# Builds one CopyBronze_<table> row per base table in ContosoDW-DEV.dbo and
+# replaces every row in the Tasks sheet with the fresh set. Re-run this
+# whenever the source schema changes, then sync_metadata("push") to sync the
+# replacement to the database.
+#
+# Destination is data-driven, not notebook configuration: each row's
+# ParametersJson carries destWorkspaceId/destLakehouseId for
+# lh_Bronze_Wave_Test (workspace 947d3136-33ac-458a-be73-ac7dc38afaa5 /
+# lakehouse 649b7795-2e22-4627-8b25-9749a6f492f0). nb_CopyTableToBronze
+# writes straight to that OneLake path -- no lakehouse needs to be attached
+# to the notebook.
+
+import json
+
+CONTOSODW_SERVER = "paulsdemos.database.windows.net"
+CONTOSODW_DATABASE = "ContosoDW-DEV"
+
+def get_contosodw_connection():
+    """Non-interactive connection to ContosoDW-DEV -- same token pattern as
+    get_connection() above, pointed at a different server/database."""
+    connstr = (
+        f"Driver={{{ODBC_DRIVER}}};"
+        f"Server=tcp:{CONTOSODW_SERVER},1433;"
+        f"Database={CONTOSODW_DATABASE};"
+        f"Encrypt=yes;"
+        f"TrustServerCertificate=no;"
+        f"Connection Timeout=30;"
+    )
+    token = notebookutils.credentials.getToken("https://database.windows.net/")
+    token_bytes = token.encode("utf-16-le")
+    token_struct = struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
+    return pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+
+with get_contosodw_connection() as src_conn:
+    cur = src_conn.cursor()
+    cur.execute(
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+        "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_TYPE = 'BASE TABLE' "
+        "ORDER BY TABLE_NAME"
+    )
+    source_tables = [row[0] for row in cur.fetchall()]
+
+print(f"Found {len(source_tables)} tables in ContosoDW-DEV.dbo")
+
+new_task_rows = [
+    {
+        "TaskName": f"CopyBronze_{t}",
+        "Include": True,
+        "JobName": "Ingest_ContosoDW_Bronze",
+        "ObjectName": "nb_CopyTableToBronze",
+        "WorkspaceName": "MDF_CentralHub",
+        "TimeoutInSeconds": 1800,
+        "Retries": 1,
+        "RetryIntervalInSeconds": 30,
+        "ParametersJson": json.dumps({
+            "sourceSchema": "dbo",
+            "sourceTable": t,
+            "destWorkspaceId": "947d3136-33ac-458a-be73-ac7dc38afaa5",
+            "destLakehouseId": "649b7795-2e22-4627-8b25-9749a6f492f0",
+        }),
+        "Dependencies": None,
+        "TaskType": "Notebook",
+        "System": "ContosoDW",
+        "Layer": "Bronze",
+        "LoggingLevel": 1,
+    }
+    for t in source_tables
+]
+
+tasks_columns = next(spec["columns"] for spec in TABLE_SPECS if spec["sheet"] == "Tasks")
+
+wb = openpyxl.load_workbook(WORKBOOK_PATH)
+ws = wb["Tasks"]
+_write_table_rows(ws, "tblTasks", tasks_columns, new_task_rows)
+wb.save(WORKBOOK_PATH)
+
+print(f"Replaced Tasks sheet with {len(new_task_rows)} rows.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ## Usage
@@ -533,13 +642,17 @@ print(_url)
 
 # ...edit orch_metadata.xlsx by hand: add/change/remove rows in each table...
 
-# Preview what a push would do, without touching the database
+# Preview what a push would do, without touching the database -- safe to
+# leave active, since dry_run=True never writes to the database.
 sync_metadata("push", dry_run=True)
 
 # Actually sync Excel -> database. A row missing from a table's sheet is
 # deleted from that table; a sheet left completely empty is skipped instead
 # of wiping the table (pass confirm_empty_tables=True to force a real wipe).
-sync_metadata("push")
+# Left commented out on purpose -- uncomment deliberately before running this
+# cell, so an unattended/scheduled run of this notebook can't silently push
+# whatever happens to be in the workbook right now.
+# sync_metadata("push")
 
 # METADATA ********************
 
