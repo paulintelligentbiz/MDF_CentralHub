@@ -27,7 +27,8 @@
                   "ParametersJson": "@item().ParametersJson",
                   "RunID": "@pipeline().parameters.RunID",
                   "ObjectID": "@item().ObjectID",
-                  "WorkspaceID": "@item().WorkspaceID"
+                  "WorkspaceID": "@item().WorkspaceID",
+                  "LoggingLevel": "@item().LoggingLevel"
                 },
                 "waitOnCompletion": true
               },

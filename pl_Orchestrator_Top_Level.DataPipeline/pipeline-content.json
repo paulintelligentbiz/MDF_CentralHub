@@ -19,7 +19,72 @@
         "typeProperties": {
           "source": {
             "type": "FabricSqlDatabaseSource",
-            "sqlReaderStoredProcedureName": "log.spLogPipelineRunEvent",
+            "sqlReaderStoredProcedureName": "orch.spGetJob",
+            "storedProcedureParameters": {
+              "JobName": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "String"
+              }
+            },
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00"
+          },
+          "datasetSettings": {
+            "type": "FabricSqlDatabaseTable",
+            "schema": [],
+            "connectionSettings": {
+              "name": "db_Metadata",
+              "properties": {
+                "type": "FabricSqlDatabase",
+                "typeProperties": {
+                  "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                  "workspaceId": "00000000-0000-0000-0000-000000000000"
+                },
+                "externalReferences": {
+                  "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+                },
+                "annotations": []
+              }
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Get Job Info",
+        "dependsOn": []
+      },
+      {
+        "type": "SetVariable",
+        "typeProperties": {
+          "variableName": "JobLoggingLevel",
+          "value": "@string(activity('Get Job Info').output.firstRow.LoggingLevel)"
+        },
+        "policy": {
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Set Job LoggingLevel",
+        "dependsOn": [
+          {
+            "activity": "Get Job Info",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "FabricSqlDatabaseSource",
+            "sqlReaderStoredProcedureName": "log.spLogJobRunEvent",
             "storedProcedureParameters": {
               "RunID": {
                 "value": "@variables('RunID')",
@@ -40,6 +105,10 @@
               "StartTimeUtc": {
                 "value": "@utcnow()",
                 "type": "String"
+              },
+              "LoggingLevel": {
+                "value": "@int(variables('JobLoggingLevel'))",
+                "type": "Int32"
               }
             },
             "partitionOption": "None",
@@ -76,6 +145,12 @@
         "dependsOn": [
           {
             "activity": "Init RunID",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "Set Job LoggingLevel",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -377,6 +452,20 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "RunID": {
+              "value": {
+                "value": "@variables('RunID')",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
             }
           }
         },
@@ -410,6 +499,83 @@
             ]
           }
         ]
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spInsertJobRunEvent",
+          "storedProcedureParameters": {
+            "RunLogId": {
+              "value": {
+                "value": "@int(variables('JobRunLogId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
+            },
+            "RunID": {
+              "value": {
+                "value": "@variables('RunID')",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "Status": {
+              "value": "Failed",
+              "type": "String"
+            },
+            "EndTimeUtc": {
+              "value": {
+                "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "FailureReason": {
+              "value": {
+                "value": "@string(activity('Until All Tasks Done').Error.message)",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Job Failure",
+        "dependsOn": [
+          {
+            "activity": "Until All Tasks Done",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
       }
     ],
     "parameters": {
@@ -428,6 +594,9 @@
         "type": "String"
       },
       "FinalStatus": {
+        "type": "String"
+      },
+      "JobLoggingLevel": {
         "type": "String"
       }
     }

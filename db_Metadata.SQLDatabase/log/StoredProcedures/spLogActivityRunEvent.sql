@@ -13,8 +13,8 @@ CREATE   PROCEDURE log.spLogActivityRunEvent
     -- ActivityRunEvent fields
     @LoggingLevel             tinyint        = 1,
     @ActivityRunId            nvarchar(100)  = NULL,
-    @EventPipelineName        nvarchar(200)  = NULL,
-    @PipelineRunId            nvarchar(100)  = NULL,
+    @EventTaskName            nvarchar(200)  = NULL,
+    @TaskInstanceId           nvarchar(100)  = NULL,
     @ActivityName             nvarchar(200)  = NULL,
     @ActivityType             nvarchar(100)  = NULL,
     @LinkedServiceName        nvarchar(200)  = NULL,
@@ -49,13 +49,13 @@ BEGIN
     SET @RunLogId = SCOPE_IDENTITY();
 
     INSERT INTO log.ActivityRunEvent (
-        RunLogId, LoggingLevel, ActivityRunId, PipelineName, PipelineRunId, ActivityName, ActivityType,
+        RunLogId, LoggingLevel, ActivityRunId, TaskName, TaskInstanceId, ActivityName, ActivityType,
         LinkedServiceName, Status, ActivityRunStart, ActivityRunEnd, DurationInMs, InputJson, OutputJson,
         ErrorCode, ErrorMessage, ErrorFailureType, ErrorTarget, ErrorDetails, RetryAttempt, IterationHash,
         UserPropertiesJson, RecoveryStatus, IntegrationRuntimeNames, ExecutionDetailsJson, ResourceId
     )
     VALUES (
-        @RunLogId, @LoggingLevel, @ActivityRunId, @EventPipelineName, @PipelineRunId, @ActivityName, @ActivityType,
+        @RunLogId, @LoggingLevel, @ActivityRunId, @EventTaskName, @TaskInstanceId, @ActivityName, @ActivityType,
         @LinkedServiceName, @EventStatus, @ActivityRunStart, @ActivityRunEnd, @DurationInMs, @InputJson, @OutputJson,
         @ErrorCode, @EventErrorMessage, @ErrorFailureType, @ErrorTarget, @ErrorDetails, @RetryAttempt, @IterationHash,
         @UserPropertiesJson, @RecoveryStatus, @IntegrationRuntimeNames, @ExecutionDetailsJson, @ResourceId

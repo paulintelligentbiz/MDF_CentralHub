@@ -1,22 +1,27 @@
 CREATE   PROCEDURE log.spInsertJobRunEvent
-    @RunLogId       bigint,  -- required -- must reference an existing log.RunLog row
-    @LoggingLevel   tinyint       = 1,
-    @JobInstanceId  nvarchar(100) = NULL,
-    @ItemId         nvarchar(100) = NULL,
-    @JobType        nvarchar(50)  = NULL,
-    @InvokeType     nvarchar(50)  = NULL,
-    @Status         nvarchar(50)  = NULL,
-    @RootActivityId nvarchar(100) = NULL,
-    @StartTimeUtc   datetime2     = NULL,
-    @EndTimeUtc     datetime2     = NULL,
-    @FailureReason  nvarchar(max) = NULL
+    @RunLogId       bigint,  -- required -- the JobRunEvent row opened by spLogJobRunEvent
+    @RunID          nvarchar(200),
+    @JobName        varchar(200),
+    @Status         nvarchar(50)   = NULL,
+    @EndTimeUtc     datetime2      = NULL,
+    @ExitValue      nvarchar(max)  = NULL,
+    @FailureReason  nvarchar(max)  = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    INSERT INTO log.JobRunEvent (RunLogId, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
-    VALUES (@RunLogId, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @Status, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
+    -- Closing entry in the RunLog ledger.
+    INSERT INTO log.RunLog (RunID, JobName, StopTime, Status, ExitValue, ErrorMessage)
+    VALUES (@RunID, @JobName, @EndTimeUtc, @Status, @ExitValue, @FailureReason);
+
+    -- Close out the single JobRunEvent row opened by spLogJobRunEvent.
+    -- (Previously an INSERT here, which duplicated the RunLogId already used by
+    -- spLogJobRunEvent and violated JobRunEvent's primary key -- fixed to UPDATE.)
+    UPDATE log.JobRunEvent
+    SET Status = @Status,
+        EndTimeUtc = @EndTimeUtc,
+        FailureReason = @FailureReason
+    WHERE RunLogId = @RunLogId;
 END;
 
 GO
-

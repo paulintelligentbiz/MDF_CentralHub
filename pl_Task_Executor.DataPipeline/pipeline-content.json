@@ -4,7 +4,7 @@
       {
         "type": "SqlServerStoredProcedure",
         "typeProperties": {
-          "storedProcedureName": "log.spLogActivityRunEvent",
+          "storedProcedureName": "log.spLogTaskRunEvent",
           "storedProcedureParameters": {
             "RunID": {
               "value": {
@@ -38,32 +38,18 @@
               "value": "Running",
               "type": "String"
             },
+            "LoggingLevel": {
+              "value": {
+                "value": "@pipeline().parameters.LoggingLevel",
+                "type": "Expression"
+              },
+              "type": "Int32"
+            },
             "EventStatus": {
               "value": "Started",
               "type": "String"
             },
-            "ActivityName": {
-              "value": {
-                "value": "@pipeline().parameters.TaskName",
-                "type": "Expression"
-              },
-              "type": "String"
-            },
-            "ActivityType": {
-              "value": {
-                "value": "@pipeline().parameters.TaskType",
-                "type": "Expression"
-              },
-              "type": "String"
-            },
-            "PipelineRunId": {
-              "value": {
-                "value": "@pipeline().RunId",
-                "type": "Expression"
-              },
-              "type": "String"
-            },
-            "ActivityRunStart": {
+            "StartTimeUtc": {
               "value": {
                 "value": "@utcnow()",
                 "type": "Expression"
@@ -97,6 +83,26 @@
         "dependsOn": []
       },
       {
+        "type": "SetVariable",
+        "typeProperties": {
+          "variableName": "TaskRunLogId",
+          "value": "@string(activity('Log Task Start').output.firstRow.RunLogId)"
+        },
+        "policy": {
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Set Task RunLogId",
+        "dependsOn": [
+          {
+            "activity": "Log Task Start",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
         "type": "Switch",
         "typeProperties": {
           "on": {
@@ -107,6 +113,131 @@
             {
               "value": "CopyJob",
               "activities": [
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": "log.spLogActivityRunEvent",
+                    "storedProcedureParameters": {
+                      "RunID": {
+                        "value": {
+                          "value": "@pipeline().parameters.RunID",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "JobName": {
+                        "value": {
+                          "value": "@pipeline().parameters.JobName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "Status": {
+                        "value": "Running",
+                        "type": "String"
+                      },
+                      "LoggingLevel": {
+                        "value": {
+                          "value": "@pipeline().parameters.LoggingLevel",
+                          "type": "Expression"
+                        },
+                        "type": "Int32"
+                      },
+                      "EventTaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskInstanceId": {
+                        "value": {
+                          "value": "@pipeline().RunId",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityRunStart": {
+                        "value": {
+                          "value": "@utcnow()",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      }
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Log Activity Start - CopyJob",
+                  "dependsOn": []
+                },
+                {
+                  "type": "SetVariable",
+                  "typeProperties": {
+                    "variableName": "ActivityRunLogId",
+                    "value": "@string(activity('Log Activity Start - CopyJob').output.firstRow.RunLogId)"
+                  },
+                  "policy": {
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Set Activity RunLogId - CopyJob",
+                  "dependsOn": [
+                    {
+                      "activity": "Log Activity Start - CopyJob",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
                 {
                   "type": "InvokeCopyJob",
                   "typeProperties": {
@@ -129,13 +260,145 @@
                   "name": "Run Copy Job",
                   "state": "Inactive",
                   "onInactiveMarkAs": "Succeeded",
-                  "dependsOn": []
+                  "dependsOn": [
+                    {
+                      "activity": "Set Activity RunLogId - CopyJob",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
                 }
               ]
             },
             {
               "value": "Notebook",
               "activities": [
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": "log.spLogActivityRunEvent",
+                    "storedProcedureParameters": {
+                      "RunID": {
+                        "value": {
+                          "value": "@pipeline().parameters.RunID",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "JobName": {
+                        "value": {
+                          "value": "@pipeline().parameters.JobName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "Status": {
+                        "value": "Running",
+                        "type": "String"
+                      },
+                      "LoggingLevel": {
+                        "value": {
+                          "value": "@pipeline().parameters.LoggingLevel",
+                          "type": "Expression"
+                        },
+                        "type": "Int32"
+                      },
+                      "EventTaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskInstanceId": {
+                        "value": {
+                          "value": "@pipeline().RunId",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityRunStart": {
+                        "value": {
+                          "value": "@utcnow()",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      }
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Log Activity Start - Notebook",
+                  "dependsOn": []
+                },
+                {
+                  "type": "SetVariable",
+                  "typeProperties": {
+                    "variableName": "ActivityRunLogId",
+                    "value": "@string(activity('Log Activity Start - Notebook').output.firstRow.RunLogId)"
+                  },
+                  "policy": {
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Set Activity RunLogId - Notebook",
+                  "dependsOn": [
+                    {
+                      "activity": "Log Activity Start - Notebook",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
                 {
                   "type": "TridentNotebook",
                   "typeProperties": {
@@ -156,13 +419,145 @@
                     "secureOutput": false
                   },
                   "name": "Run Notebook",
-                  "dependsOn": []
+                  "dependsOn": [
+                    {
+                      "activity": "Set Activity RunLogId - Notebook",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
                 }
               ]
             },
             {
               "value": "StoredProcedure",
               "activities": [
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": "log.spLogActivityRunEvent",
+                    "storedProcedureParameters": {
+                      "RunID": {
+                        "value": {
+                          "value": "@pipeline().parameters.RunID",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "JobName": {
+                        "value": {
+                          "value": "@pipeline().parameters.JobName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "Status": {
+                        "value": "Running",
+                        "type": "String"
+                      },
+                      "LoggingLevel": {
+                        "value": {
+                          "value": "@pipeline().parameters.LoggingLevel",
+                          "type": "Expression"
+                        },
+                        "type": "Int32"
+                      },
+                      "EventTaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskInstanceId": {
+                        "value": {
+                          "value": "@pipeline().RunId",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityRunStart": {
+                        "value": {
+                          "value": "@utcnow()",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      }
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Log Activity Start - StoredProcedure",
+                  "dependsOn": []
+                },
+                {
+                  "type": "SetVariable",
+                  "typeProperties": {
+                    "variableName": "ActivityRunLogId",
+                    "value": "@string(activity('Log Activity Start - StoredProcedure').output.firstRow.RunLogId)"
+                  },
+                  "policy": {
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Set Activity RunLogId - StoredProcedure",
+                  "dependsOn": [
+                    {
+                      "activity": "Log Activity Start - StoredProcedure",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
                 {
                   "type": "SqlServerStoredProcedure",
                   "typeProperties": {
@@ -193,13 +588,145 @@
                     "secureOutput": false
                   },
                   "name": "Run Stored Procedure",
-                  "dependsOn": []
+                  "dependsOn": [
+                    {
+                      "activity": "Set Activity RunLogId - StoredProcedure",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
                 }
               ]
             },
             {
               "value": "Dataflow",
               "activities": [
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": "log.spLogActivityRunEvent",
+                    "storedProcedureParameters": {
+                      "RunID": {
+                        "value": {
+                          "value": "@pipeline().parameters.RunID",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "JobName": {
+                        "value": {
+                          "value": "@pipeline().parameters.JobName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "Status": {
+                        "value": "Running",
+                        "type": "String"
+                      },
+                      "LoggingLevel": {
+                        "value": {
+                          "value": "@pipeline().parameters.LoggingLevel",
+                          "type": "Expression"
+                        },
+                        "type": "Int32"
+                      },
+                      "EventTaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "TaskInstanceId": {
+                        "value": {
+                          "value": "@pipeline().RunId",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityType": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskType",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "ActivityRunStart": {
+                        "value": {
+                          "value": "@utcnow()",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      }
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Log Activity Start - Dataflow",
+                  "dependsOn": []
+                },
+                {
+                  "type": "SetVariable",
+                  "typeProperties": {
+                    "variableName": "ActivityRunLogId",
+                    "value": "@string(activity('Log Activity Start - Dataflow').output.firstRow.RunLogId)"
+                  },
+                  "policy": {
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Set Activity RunLogId - Dataflow",
+                  "dependsOn": [
+                    {
+                      "activity": "Log Activity Start - Dataflow",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
                 {
                   "type": "RefreshDataflow",
                   "typeProperties": {
@@ -221,7 +748,14 @@
                     "secureOutput": false
                   },
                   "name": "Run Dataflow",
-                  "dependsOn": []
+                  "dependsOn": [
+                    {
+                      "activity": "Set Activity RunLogId - Dataflow",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
                 }
               ]
             },
@@ -245,7 +779,7 @@
         "name": "Switch On Task Type",
         "dependsOn": [
           {
-            "activity": "Log Task Start",
+            "activity": "Set Task RunLogId",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -255,14 +789,14 @@
       {
         "type": "SqlServerStoredProcedure",
         "typeProperties": {
-          "storedProcedureName": "log.spLogActivityRunEvent",
+          "storedProcedureName": "log.spInsertActivityRunEvent",
           "storedProcedureParameters": {
-            "JobName": {
+            "RunLogId": {
               "value": {
-                "value": "@pipeline().parameters.JobName",
+                "value": "@int(variables('ActivityRunLogId'))",
                 "type": "Expression"
               },
-              "type": "String"
+              "type": "Int64"
             },
             "RunID": {
               "value": {
@@ -271,12 +805,11 @@
               },
               "type": "String"
             },
-            "Status": {
-              "value": "Succeeded",
-              "type": "String"
-            },
-            "EventStatus": {
-              "value": "Succeeded",
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
               "type": "String"
             },
             "TaskName": {
@@ -293,28 +826,186 @@
               },
               "type": "String"
             },
-            "ActivityName": {
+            "Status": {
+              "value": "Succeeded",
+              "type": "String"
+            },
+            "ActivityRunEnd": {
+              "value": {
+                "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Activity Success",
+        "dependsOn": [
+          {
+            "activity": "Switch On Task Type",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spInsertActivityRunEvent",
+          "storedProcedureParameters": {
+            "RunLogId": {
+              "value": {
+                "value": "@int(variables('ActivityRunLogId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
+            },
+            "RunID": {
+              "value": {
+                "value": "@pipeline().parameters.RunID",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskName": {
               "value": {
                 "value": "@pipeline().parameters.TaskName",
                 "type": "Expression"
               },
               "type": "String"
             },
-            "ActivityType": {
+            "TaskType": {
               "value": {
                 "value": "@pipeline().parameters.TaskType",
                 "type": "Expression"
               },
               "type": "String"
             },
-            "PipelineRunId": {
+            "Status": {
+              "value": "Failed",
+              "type": "String"
+            },
+            "ActivityRunEnd": {
               "value": {
-                "value": "@pipeline().RunId",
+                "value": "@utcnow()",
                 "type": "Expression"
               },
               "type": "String"
             },
-            "ActivityRunEnd": {
+            "ErrorMessage": {
+              "value": {
+                "value": "@string(activity('Switch On Task Type').Error.message)",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Activity Failure",
+        "dependsOn": [
+          {
+            "activity": "Switch On Task Type",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spInsertTaskRunEvent",
+          "storedProcedureParameters": {
+            "RunLogId": {
+              "value": {
+                "value": "@int(variables('TaskRunLogId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
+            },
+            "RunID": {
+              "value": {
+                "value": "@pipeline().parameters.RunID",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "Status": {
+              "value": "Succeeded",
+              "type": "String"
+            },
+            "EndTimeUtc": {
               "value": {
                 "value": "@utcnow()",
                 "type": "Expression"
@@ -353,6 +1044,97 @@
             ]
           }
         ]
+      },
+      {
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "log.spInsertTaskRunEvent",
+          "storedProcedureParameters": {
+            "RunLogId": {
+              "value": {
+                "value": "@int(variables('TaskRunLogId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
+            },
+            "RunID": {
+              "value": {
+                "value": "@pipeline().parameters.RunID",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "JobName": {
+              "value": {
+                "value": "@pipeline().parameters.JobName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskName": {
+              "value": {
+                "value": "@pipeline().parameters.TaskName",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "TaskType": {
+              "value": {
+                "value": "@pipeline().parameters.TaskType",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "Status": {
+              "value": "Failed",
+              "type": "String"
+            },
+            "EndTimeUtc": {
+              "value": {
+                "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ErrorMessage": {
+              "value": {
+                "value": "@string(activity('Switch On Task Type').Error.message)",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "connectionSettings": {
+          "name": "db_Metadata",
+          "properties": {
+            "type": "FabricSqlDatabase",
+            "typeProperties": {
+              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+              "workspaceId": "00000000-0000-0000-0000-000000000000"
+            },
+            "externalReferences": {
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
+            },
+            "annotations": []
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Log Task Failure",
+        "dependsOn": [
+          {
+            "activity": "Switch On Task Type",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
       }
     ],
     "parameters": {
@@ -382,6 +1164,17 @@
       },
       "WorkspaceID": {
         "type": "string"
+      },
+      "LoggingLevel": {
+        "type": "int"
+      }
+    },
+    "variables": {
+      "TaskRunLogId": {
+        "type": "String"
+      },
+      "ActivityRunLogId": {
+        "type": "String"
       }
     }
   }

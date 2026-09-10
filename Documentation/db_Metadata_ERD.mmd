@@ -1,0 +1,96 @@
+erDiagram
+    Jobs {
+        varchar JobName PK
+        bit Include
+        int TimeoutInSeconds
+        int Retries
+        varchar WorkspaceName FK
+        tinyint LoggingLevel FK
+    }
+    Tasks {
+        varchar TaskName PK
+        varchar JobName FK
+        varchar ObjectName
+        varchar WorkspaceName FK
+        varchar TaskType FK
+        tinyint LoggingLevel FK
+    }
+    TaskType {
+        varchar TaskType PK
+        bit AllowParallel
+    }
+    ObjectIDs {
+        varchar WorkspaceName PK
+        varchar ObjectName PK
+        varchar ObjectID
+        varchar WorkspaceID
+    }
+    DependencyCondition {
+        varchar DependencyCondition PK
+    }
+    JobDependencies {
+        varchar JobName PK,FK
+        varchar DependentJobName PK
+        varchar DependsOn FK
+    }
+    TaskDependencies {
+        varchar TaskName PK,FK
+        varchar DependentTaskName PK
+        varchar DependsOn FK
+    }
+    RunLog {
+        bigint RunLogId PK
+        nvarchar RunID
+        nvarchar JobName
+        nvarchar TaskName
+        nvarchar Status
+    }
+    JobRunEvent {
+        bigint RunLogId PK,FK
+        varchar JobName FK
+        tinyint LoggingLevel FK
+        nvarchar Status
+    }
+    TaskRunEvent {
+        bigint RunLogId PK,FK
+        varchar JobName FK
+        varchar TaskName FK
+        tinyint LoggingLevel FK
+        nvarchar Status
+    }
+    ActivityRunEvent {
+        nvarchar ActivityRunId PK
+        bigint RunLogId FK
+        tinyint LoggingLevel FK
+        nvarchar TaskName
+        nvarchar TaskInstanceId
+        nvarchar Status
+    }
+    LoggingLevel {
+        tinyint LoggingLevel PK
+        nvarchar LoggingLevelName
+    }
+
+    Jobs ||--o{ Tasks : "has"
+    Jobs }o--|| ObjectIDs : "resolves identity"
+    Tasks }o--|| ObjectIDs : "resolves identity"
+    Tasks }o--|| TaskType : "is of type"
+
+    Jobs ||--o{ JobDependencies : "JobName"
+    JobDependencies }o--|| DependencyCondition : "DependsOn"
+    Tasks ||--o{ TaskDependencies : "TaskName"
+    TaskDependencies }o--|| DependencyCondition : "DependsOn"
+
+    Jobs }o--|| LoggingLevel : "LoggingLevel"
+    Tasks }o--|| LoggingLevel : "LoggingLevel"
+    JobRunEvent }o--|| LoggingLevel : "LoggingLevel"
+    TaskRunEvent }o--|| LoggingLevel : "LoggingLevel"
+    ActivityRunEvent }o--|| LoggingLevel : "LoggingLevel"
+
+    Jobs ||--o{ JobRunEvent : "JobName"
+    Jobs ||--o{ TaskRunEvent : "JobName"
+    Tasks ||--o{ TaskRunEvent : "TaskName"
+
+    RunLog ||--o| JobRunEvent : "RunLogId"
+    RunLog ||--o| TaskRunEvent : "RunLogId"
+    RunLog ||--o{ ActivityRunEvent : "RunLogId"

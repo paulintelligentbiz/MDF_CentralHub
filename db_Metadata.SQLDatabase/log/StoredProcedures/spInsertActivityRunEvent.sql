@@ -1,17 +1,12 @@
 CREATE   PROCEDURE log.spInsertActivityRunEvent
-    @RunLogId                bigint,  -- required -- must reference an existing log.RunLog row
-    @LoggingLevel            tinyint        = 1,
-    @ActivityRunId           nvarchar(100)  = NULL,
-    @PipelineName            nvarchar(200)  = NULL,
-    @PipelineRunId           nvarchar(100)  = NULL,
-    @ActivityName            nvarchar(200)  = NULL,
-    @ActivityType            nvarchar(100)  = NULL,
-    @LinkedServiceName       nvarchar(200)  = NULL,
+    @RunLogId                bigint,  -- required -- the ActivityRunEvent row opened by spLogActivityRunEvent
+    @RunID                   nvarchar(200)  = NULL,
+    @JobName                 nvarchar(200)  = NULL,
+    @TaskName                nvarchar(200)  = NULL,
+    @TaskType                nvarchar(50)   = NULL,
     @Status                  nvarchar(50)   = NULL,
-    @ActivityRunStart        datetime2      = NULL,
     @ActivityRunEnd          datetime2      = NULL,
     @DurationInMs            int            = NULL,
-    @InputJson               nvarchar(max)  = NULL,
     @OutputJson              nvarchar(max)  = NULL,
     @ErrorCode               nvarchar(100)  = NULL,
     @ErrorMessage            nvarchar(max)  = NULL,
@@ -19,30 +14,33 @@ CREATE   PROCEDURE log.spInsertActivityRunEvent
     @ErrorTarget             nvarchar(200)  = NULL,
     @ErrorDetails            nvarchar(max)  = NULL,
     @RetryAttempt            int            = NULL,
-    @IterationHash           nvarchar(200)  = NULL,
-    @UserPropertiesJson      nvarchar(max)  = NULL,
     @RecoveryStatus          nvarchar(50)   = NULL,
-    @IntegrationRuntimeNames nvarchar(max)  = NULL,
-    @ExecutionDetailsJson    nvarchar(max)  = NULL,
-    @ResourceId              nvarchar(1000) = NULL
+    @ExecutionDetailsJson    nvarchar(max)  = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SET @ActivityRunId = ISNULL(@ActivityRunId, CONVERT(nvarchar(100), NEWID()));
 
-    INSERT INTO log.ActivityRunEvent (
-        RunLogId, LoggingLevel, ActivityRunId, PipelineName, PipelineRunId, ActivityName, ActivityType,
-        LinkedServiceName, Status, ActivityRunStart, ActivityRunEnd, DurationInMs, InputJson, OutputJson,
-        ErrorCode, ErrorMessage, ErrorFailureType, ErrorTarget, ErrorDetails, RetryAttempt, IterationHash,
-        UserPropertiesJson, RecoveryStatus, IntegrationRuntimeNames, ExecutionDetailsJson, ResourceId
-    )
-    VALUES (
-        @RunLogId, @LoggingLevel, @ActivityRunId, @PipelineName, @PipelineRunId, @ActivityName, @ActivityType,
-        @LinkedServiceName, @Status, @ActivityRunStart, @ActivityRunEnd, @DurationInMs, @InputJson, @OutputJson,
-        @ErrorCode, @ErrorMessage, @ErrorFailureType, @ErrorTarget, @ErrorDetails, @RetryAttempt, @IterationHash,
-        @UserPropertiesJson, @RecoveryStatus, @IntegrationRuntimeNames, @ExecutionDetailsJson, @ResourceId
-    );
+    -- Closing entry in the RunLog ledger.
+    INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, StopTime, Status, ErrorMessage)
+    VALUES (@RunID, @JobName, @TaskName, @TaskType, @ActivityRunEnd, @Status, @ErrorMessage);
+
+    -- Close out the single ActivityRunEvent row opened by spLogActivityRunEvent.
+    -- (Previously an INSERT here; changed to UPDATE to avoid duplicating/orphaning rows
+    -- once callers started reusing the RunLogId captured at activity start.)
+    UPDATE log.ActivityRunEvent
+    SET Status = @Status,
+        ActivityRunEnd = @ActivityRunEnd,
+        DurationInMs = @DurationInMs,
+        OutputJson = @OutputJson,
+        ErrorCode = @ErrorCode,
+        ErrorMessage = @ErrorMessage,
+        ErrorFailureType = @ErrorFailureType,
+        ErrorTarget = @ErrorTarget,
+        ErrorDetails = @ErrorDetails,
+        RetryAttempt = @RetryAttempt,
+        RecoveryStatus = @RecoveryStatus,
+        ExecutionDetailsJson = @ExecutionDetailsJson
+    WHERE RunLogId = @RunLogId;
 END;
 
 GO
-
