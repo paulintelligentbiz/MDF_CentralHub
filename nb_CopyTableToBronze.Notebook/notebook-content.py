@@ -20,17 +20,27 @@
 #    pipeline's identity once scheduled) needs write access to whatever
 #    destination lakehouse(s) the Tasks you run point it at -- there's no
 #    attached-lakehouse shortcut, so that access has to exist explicitly.
-# 2. Make sure `pyodbc` and the **ODBC Driver 18 for SQL Server** are available in the
+# 2. That same identity needs an AAD-based login/user on the source database
+#    (`ContosoDW-DEV`) -- `CREATE USER [...] FROM EXTERNAL PROVIDER` there, with
+#    read access to whatever tables the Tasks you run point it at.
+# 3. Make sure `pyodbc` and the **ODBC Driver 18 for SQL Server** are available in the
 #    attached environment (`%pip install pyodbc` in a cell if needed).
-# 3. `pl_Task_Executor`'s `Run Notebook` activity needs to forward `ParametersJson` as
+# 4. `pl_Task_Executor`'s `Run Notebook` activity needs to forward `ParametersJson` as
 #    a base parameter (see the accompanying pipeline fix) so this notebook actually
 #    receives the table name at runtime.
 # 
-# **Auth note:** `Authentication=Active Directory Interactive` (below) opens a
-# browser sign-in and is fine for you running this manually while signed in, which
-# is exactly this test. It is **not** suitable for an unattended/scheduled pipeline
-# run -- for that, swap the connection to `ActiveDirectoryServicePrincipal` or
-# `ActiveDirectoryMsi` once this framework moves past manual testing.
+# **Auth note:** connects with an AAD access token for whatever identity this
+# notebook is running as (your account manually; the pipeline's run-as identity
+# when scheduled) -- same pattern `nb_RefreshObjectIDs` uses for `db_Metadata`,
+# via `notebookutils.credentials.getToken(...)`, no interactive sign-in and no
+# stored secret. POC-only shortcut: that identity still needs an AAD-based login
+# on `ContosoDW-DEV` itself (`CREATE USER [...] FROM EXTERNAL PROVIDER` there,
+# with the needed grants) -- this doesn't create that, it only avoids a
+# browser prompt or a secret to present at connect time. (Previously used
+# `Authentication=Active Directory Interactive`, which opens a browser sign-in --
+# fine running this manually, but it just hangs waiting for a sign-in nobody is
+# there to complete when invoked unattended from a pipeline, failing with a
+# login timeout.)
 
 
 # PARAMETERS CELL ********************
@@ -58,20 +68,8 @@ DEST_LAKEHOUSE_ID = params["destLakehouseId"]
 DEST_TABLE = params.get("destTable", SOURCE_TABLE)
 
 # "source connection" (ContosoDW-DEV) -- see /topics/database-connections.md
-SOURCE_CONNECTION_STRING = (
-    "Data Source=paulsdemos.database.windows.net;"
-    "Initial Catalog=ContosoDW-DEV;"
-    "Persist Security Info=False;"
-    "User ID=paul@intelligentbiz.net;"
-    "Pooling=False;"
-    "MultipleActiveResultSets=False;"
-    "Connect Timeout=30;"
-    "Encrypt=True;"
-    "Trust Server Certificate=True;"
-    "Authentication=Active Directory Interactive;"
-    "Command Timeout=0"
-)
-
+SOURCE_SERVER = "paulsdemos.database.windows.net"
+SOURCE_DATABASE = "ContosoDW-DEV"
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 
 print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_TABLE}")
@@ -79,42 +77,37 @@ print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DE
 
 # CELL ********************
 
-def parse_ado_connection_string(conn_str):
-    parts = {}
-    for chunk in conn_str.split(";"):
-        chunk = chunk.strip()
-        if not chunk or "=" not in chunk:
-            continue
-        key, value = chunk.split("=", 1)
-        parts[key.strip().lower()] = value.strip()
-    return parts
+import struct
 
-def build_pyodbc_connection_string(ado_conn_str, driver=ODBC_DRIVER):
-    p = parse_ado_connection_string(ado_conn_str)
-    server = p.get("data source")
-    database = p.get("initial catalog")
-    encrypt = "yes" if p.get("encrypt", "true").lower() == "true" else "no"
-    trust_cert = "yes" if p.get("trust server certificate", "false").lower() == "true" else "no"
-    timeout = p.get("connect timeout", "30")
-    auth = p.get("authentication", "Active Directory Interactive").replace(" ", "")
+try:
+    from notebookutils import credentials as _nb_credentials
+except ImportError:
+    _nb_credentials = None  # allows py_compile / unit tests outside a Fabric runtime
 
-    return (
+SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+def connect_with_aad_token(server, database, driver=ODBC_DRIVER):
+    """AAD-token connection: authenticates as whatever identity this notebook
+    is running as, with no interactive prompt and no stored secret -- POC
+    shortcut, not a substitute for a real service-principal/MSI setup once
+    this moves past manual testing. Requires that identity to already have an
+    AAD-based login/user on the target Azure SQL database."""
+    token = _nb_credentials.getToken("https://database.windows.net/").encode("UTF-16-LE")
+    token_struct = struct.pack(f"<I{len(token)}s", len(token), token)
+    connstr = (
         f"Driver={{{driver}}};"
-        f"Server=tcp:{server};"
+        f"Server=tcp:{server},1433;"
         f"Database={database};"
-        f"Encrypt={encrypt};"
-        f"TrustServerCertificate={trust_cert};"
-        f"Connection Timeout={timeout};"
-        f"Authentication={auth};"
+        f"Encrypt=yes;TrustServerCertificate=no;"
     )
+    return pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
 
 
 # CELL ********************
 
 import pyodbc
 
-pyodbc_connstr = build_pyodbc_connection_string(SOURCE_CONNECTION_STRING)
-with pyodbc.connect(pyodbc_connstr) as conn:
+with connect_with_aad_token(SOURCE_SERVER, SOURCE_DATABASE) as conn:
     df = pd.read_sql(f"SELECT * FROM [{SOURCE_SCHEMA}].[{SOURCE_TABLE}]", conn)
 
 print(f"Read {len(df)} rows, {len(df.columns)} columns from {SOURCE_SCHEMA}.{SOURCE_TABLE}")
