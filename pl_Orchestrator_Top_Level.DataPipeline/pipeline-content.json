@@ -523,7 +523,7 @@
             },
             "JobName": {
               "value": {
-                "value": "@variables('EffectiveJobName')",
+                "value": "@pipeline().parameters.JobName",
                 "type": "Expression"
               },
               "type": "String"
@@ -554,7 +554,7 @@
         "name": "Log Job End",
         "dependsOn": [
           {
-            "activity": "Run Job",
+            "activity": "Until All Tasks Done",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -582,7 +582,7 @@
             },
             "JobName": {
               "value": {
-                "value": "@variables('EffectiveJobName')",
+                "value": "@pipeline().parameters.JobName",
                 "type": "Expression"
               },
               "type": "String"
@@ -600,7 +600,7 @@
             },
             "FailureReason": {
               "value": {
-                "value": "@string(activity('Run Job').Error.message)",
+                "value": "@string(activity('Until All Tasks Done').Error.message)",
                 "type": "Expression"
               },
               "type": "String"
@@ -631,7 +631,7 @@
         "name": "Log Job Failure",
         "dependsOn": [
           {
-            "activity": "Run Job",
+            "activity": "Until All Tasks Done",
             "dependencyConditions": [
               "Failed"
             ]
@@ -659,9 +659,6 @@
         "type": "String"
       },
       "JobLoggingLevel": {
-        "type": "String"
-      },
-      "EffectiveJobName": {
         "type": "String"
       }
     }
