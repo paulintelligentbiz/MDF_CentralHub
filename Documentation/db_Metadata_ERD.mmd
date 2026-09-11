@@ -10,7 +10,7 @@ erDiagram
     Tasks {
         varchar TaskName PK
         varchar JobName FK
-        varchar ObjectName
+        varchar ObjectName FK
         varchar WorkspaceName FK
         varchar TaskType FK
         tinyint LoggingLevel FK
@@ -72,8 +72,9 @@ erDiagram
     }
 
     Jobs ||--o{ Tasks : "has"
-    Jobs }o--|| ObjectIDs : "resolves identity"
-    Tasks }o--|| ObjectIDs : "resolves identity"
+    Jobs }o--|| ObjectIDs : "FK_Jobs_ObjectIDs (WorkspaceName, JobName)"
+    Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Job (WorkspaceName, JobName)"
+    Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"
 
     Jobs ||--o{ JobDependencies : "JobName"
