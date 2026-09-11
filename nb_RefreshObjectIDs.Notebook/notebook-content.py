@@ -332,7 +332,7 @@ refresh_object_ids(
 #    `pl_Orchestrator_Top_Level` (currently a placeholder -- see that pipeline's
 #    change notes).
 # 3. Optionally add a row for this notebook itself to `orch.ObjectIDs`
-#    (`WorkspaceName="MDF_CentralHub"`, `ObjectName="nb_RefreshObjectIDs"`) so it's
+#    (`WorkspaceName="Wave MDF CentralHub"`, `ObjectName="nb_RefreshObjectIDs"`) so it's
 #    tracked the same way as everything else, in case something later invokes it
 #    as a Task too.
 

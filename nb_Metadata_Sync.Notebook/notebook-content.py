@@ -580,7 +580,7 @@ new_task_rows = [
         "Include": True,
         "JobName": "Ingest_ContosoDW_Bronze",
         "ObjectName": "nb_CopyTableToBronze",
-        "WorkspaceName": "MDF_CentralHub",
+        "WorkspaceName": "Wave MDF CentralHub",
         "TimeoutInSeconds": 1800,
         "Retries": 1,
         "RetryIntervalInSeconds": 30,
