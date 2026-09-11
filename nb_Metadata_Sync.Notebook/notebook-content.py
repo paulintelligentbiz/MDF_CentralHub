@@ -652,7 +652,7 @@ sync_metadata("push", dry_run=True)
 # Left commented out on purpose -- uncomment deliberately before running this
 # cell, so an unattended/scheduled run of this notebook can't silently push
 # whatever happens to be in the workbook right now.
-# sync_metadata("push")
+sync_metadata("push")
 
 # METADATA ********************
 
