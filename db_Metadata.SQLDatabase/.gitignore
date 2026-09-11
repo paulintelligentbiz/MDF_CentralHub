@@ -35,11 +35,6 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
-# This project has its own schema folder named "log" (db_Metadata.SQLDatabase/log/)
-# which the generic VS ignore rule above would otherwise swallow. Un-ignore it.
-!/log/
-!/log/**
-
 # Visual Studio 2015/2017 cache/options directory
 .vs/
 # Uncomment if you have tasks that create the project's static files in wwwroot
