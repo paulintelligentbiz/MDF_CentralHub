@@ -5,7 +5,10 @@
         "type": "SetVariable",
         "typeProperties": {
           "variableName": "RunID",
-          "value": "@pipeline().RunId"
+          "value": {
+            "value": "@pipeline().RunId",
+            "type": "Expression"
+          }
         },
         "policy": {
           "secureInput": false,
@@ -22,7 +25,10 @@
             "sqlReaderStoredProcedureName": "orch.spGetJob",
             "storedProcedureParameters": {
               "JobName": {
-                "value": "@pipeline().parameters.JobName",
+                "value": {
+                  "value": "@pipeline().parameters.JobName",
+                  "type": "Expression"
+                },
                 "type": "String"
               }
             },
@@ -63,7 +69,10 @@
         "type": "SetVariable",
         "typeProperties": {
           "variableName": "JobLoggingLevel",
-          "value": "@string(activity('Get Job Info').output.firstRow.LoggingLevel)"
+          "value": {
+            "value": "@string(activity('Get Job Info').output.firstRow.LoggingLevel)",
+            "type": "Expression"
+          }
         },
         "policy": {
           "secureInput": false,
@@ -87,11 +96,17 @@
             "sqlReaderStoredProcedureName": "log.spLogJobRunEvent",
             "storedProcedureParameters": {
               "RunID": {
-                "value": "@variables('RunID')",
+                "value": {
+                  "value": "@variables('RunID')",
+                  "type": "Expression"
+                },
                 "type": "String"
               },
               "JobName": {
-                "value": "@pipeline().parameters.JobName",
+                "value": {
+                  "value": "@pipeline().parameters.JobName",
+                  "type": "Expression"
+                },
                 "type": "String"
               },
               "Status": {
@@ -103,11 +118,17 @@
                 "type": "String"
               },
               "StartTimeUtc": {
-                "value": "@utcnow()",
+                "value": {
+                  "value": "@utcnow()",
+                  "type": "Expression"
+                },
                 "type": "String"
               },
               "LoggingLevel": {
-                "value": "@int(variables('JobLoggingLevel'))",
+                "value": {
+                  "value": "@int(variables('JobLoggingLevel'))",
+                  "type": "Expression"
+                },
                 "type": "Int32"
               }
             },
@@ -161,7 +182,10 @@
         "type": "SetVariable",
         "typeProperties": {
           "variableName": "JobRunLogId",
-          "value": "@string(activity('Log Job Start').output.firstRow.RunLogId)"
+          "value": {
+            "value": "@string(activity('Log Job Start').output.firstRow.RunLogId)",
+            "type": "Expression"
+          }
         },
         "policy": {
           "secureInput": false,
@@ -194,11 +218,17 @@
                   "sqlReaderStoredProcedureName": "orch.spGetNextWave",
                   "storedProcedureParameters": {
                     "JobName": {
-                      "value": "@pipeline().parameters.JobName",
+                      "value": {
+                        "value": "@pipeline().parameters.JobName",
+                        "type": "Expression"
+                      },
                       "type": "String"
                     },
                     "RunID": {
-                      "value": "@variables('RunID')",
+                      "value": {
+                        "value": "@variables('RunID')",
+                        "type": "Expression"
+                      },
                       "type": "String"
                     }
                   },
@@ -262,9 +292,18 @@
                                   "type": "PipelineReference"
                                 },
                                 "parameters": {
-                                  "JobName": "@pipeline().parameters.JobName",
-                                  "RunID": "@variables('RunID')",
-                                  "TasksJson": "@activity('Get Next Wave').output.firstRow.TasksJson"
+                                  "JobName": {
+                                    "value": "@pipeline().parameters.JobName",
+                                    "type": "Expression"
+                                  },
+                                  "RunID": {
+                                    "value": "@variables('RunID')",
+                                    "type": "Expression"
+                                  },
+                                  "TasksJson": {
+                                    "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
+                                    "type": "Expression"
+                                  }
                                 },
                                 "waitOnCompletion": true
                               },
@@ -287,9 +326,18 @@
                                   "type": "PipelineReference"
                                 },
                                 "parameters": {
-                                  "JobName": "@pipeline().parameters.JobName",
-                                  "RunID": "@variables('RunID')",
-                                  "TasksJson": "@activity('Get Next Wave').output.firstRow.TasksJson"
+                                  "JobName": {
+                                    "value": "@pipeline().parameters.JobName",
+                                    "type": "Expression"
+                                  },
+                                  "RunID": {
+                                    "value": "@variables('RunID')",
+                                    "type": "Expression"
+                                  },
+                                  "TasksJson": {
+                                    "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
+                                    "type": "Expression"
+                                  }
                                 },
                                 "waitOnCompletion": true
                               },
@@ -307,7 +355,8 @@
                     "name": "Switch On Execution Mode",
                     "dependsOn": []
                   }
-                ]
+                ],
+                "ifFalseActivities": []
               },
               "name": "Any Tasks Ready",
               "dependsOn": [
@@ -327,11 +376,17 @@
                   "sqlReaderStoredProcedureName": "orch.spGetRunStatus",
                   "storedProcedureParameters": {
                     "JobName": {
-                      "value": "@pipeline().parameters.JobName",
+                      "value": {
+                        "value": "@pipeline().parameters.JobName",
+                        "type": "Expression"
+                      },
                       "type": "String"
                     },
                     "RunID": {
-                      "value": "@variables('RunID')",
+                      "value": {
+                        "value": "@variables('RunID')",
+                        "type": "Expression"
+                      },
                       "type": "String"
                     }
                   },
@@ -379,7 +434,10 @@
               "type": "SetVariable",
               "typeProperties": {
                 "variableName": "FinalStatus",
-                "value": "@activity('Get Run Status').output.firstRow.RunStatus"
+                "value": {
+                  "value": "@activity('Get Run Status').output.firstRow.RunStatus",
+                  "type": "Expression"
+                }
               },
               "policy": {
                 "secureInput": false,
@@ -399,7 +457,10 @@
               "type": "SetVariable",
               "typeProperties": {
                 "variableName": "Done",
-                "value": "@or(equals(activity('Get Run Status').output.firstRow.RunStatus, 'Complete'), equals(activity('Get Run Status').output.firstRow.RunStatus, 'Failed'))"
+                "value": {
+                  "value": "@or(equals(activity('Get Run Status').output.firstRow.RunStatus, 'Complete'), equals(activity('Get Run Status').output.firstRow.RunStatus, 'Failed'))",
+                  "type": "Expression"
+                }
               },
               "policy": {
                 "secureInput": false,
@@ -580,7 +641,8 @@
     ],
     "parameters": {
       "JobName": {
-        "type": "string"
+        "type": "string",
+        "defaultValue": "Ingest_ContosoDW_Bronze"
       }
     },
     "variables": {
