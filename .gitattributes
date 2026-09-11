@@ -1,0 +1,9 @@
+# Fabric's own git integration writes every item's definition files (pipeline
+# JSON, notebook code, SQL Database objects) with LF line endings. Force LF
+# here too, regardless of a clone's core.autocrlf setting, so a local Windows
+# commit and a Fabric portal commit never disagree about line endings and
+# produce a "whole file changed" diff when nothing textually changed.
+*.json text eol=lf
+*.py text eol=lf
+*.sql text eol=lf
+*.ipynb text eol=lf
