@@ -25,11 +25,11 @@ One row per orchestrated Job — a top-level unit of work (e.g., a "wave" of rel
 | ScheduledStartUTC | TIME(0) NULL | Time of day (UTC) the job is scheduled to start, if it runs on a fixed daily schedule. |
 | ParametersJson | NVARCHAR(MAX) NULL | JSON blob of job-level parameters passed to whatever orchestrates the job. |
 | Dependencies | NVARCHAR(MAX) NULL | JSON array of other `JobName` values this job depends on. (See also `orch.JobDependencies`, below, for the newer relational form of job-to-job precedence.) |
-| WorkspaceName | VARCHAR(200) NULL | Fabric workspace this job's own object identity belongs to; paired with `JobName` as a foreign key into `ObjectIDs`. |
+| WorkspaceName | VARCHAR(200) NULL | Fabric workspace this job's own object identity belongs to. Paired with `JobName`, it's kept resolvable in `ObjectIDs` by `nb_RefreshObjectIDs`, but (as of the `FK_Jobs_ObjectIDs` drop) that's convention, not an enforced foreign key. |
 | Environment | NVARCHAR(100) NULL | Deployment environment label (e.g., DEV/TEST/PROD) this job definition applies to. |
 | LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — controls how verbosely this job's runs are logged. |
 
-**Constraints:** `PRIMARY KEY CLUSTERED (JobName)`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FOREIGN KEY (WorkspaceName, JobName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`.
+**Constraints:** `PRIMARY KEY CLUSTERED (JobName)`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`. (`FK_Jobs_ObjectIDs (WorkspaceName, JobName) REFERENCES orch.ObjectIDs` was dropped as unused -- nothing joins Jobs to ObjectIDs at runtime; `orch.spGetJob` is a bare `SELECT * FROM orch.Jobs`.)
 
 A new lookup procedure, `orch.spGetJob`, returns a Job's full row by `JobName` — `pl_Orchestrator_Top_Level` calls it at the start of a run so it can read `LoggingLevel` and pass it into `log.spLogJobRunEvent`, rather than logging always at the default level.
 
@@ -54,7 +54,7 @@ One row per individual unit of work (a Task) belonging to a Job — e.g., a sing
 | Layer | NVARCHAR(100) NULL | Free-text label for the data layer this task populates (e.g., `Bronze`) — descriptive/organizational, not enforced by a constraint. |
 | LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — controls logging verbosity for this task's runs. |
 
-**Constraints:** `PRIMARY KEY CLUSTERED (TaskName)`; `FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FOREIGN KEY (TaskType) REFERENCES orch.TaskType`; `FOREIGN KEY (WorkspaceName, JobName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`; `FOREIGN KEY (WorkspaceName, ObjectName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`.
+**Constraints:** `PRIMARY KEY CLUSTERED (TaskName)`; `FK_Tasks_Job FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_Tasks_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_Tasks_TaskType FOREIGN KEY (TaskType) REFERENCES orch.TaskType`; `FK_Tasks_ObjectIDs_Job FOREIGN KEY (WorkspaceName, JobName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`; `FK_Tasks_ObjectIDs_Object FOREIGN KEY (WorkspaceName, ObjectName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`. (A duplicate of the last constraint, previously tracked under the stray name `FK_Tasks_ObjectIDs_ObjectName`, has been removed.)
 
 `orch.spGetNextWave` already selects each ready task's `LoggingLevel` into `TasksJson`; the two Wave Runner pipelines now forward `item().LoggingLevel` into `pl_Task_Executor` as a pipeline parameter, which passes it into every `log.spLogTaskRunEvent`/`log.spLogActivityRunEvent` call for that task.
 
@@ -243,7 +243,7 @@ Small lookup table enumerating valid logging verbosity levels, referenced by `or
 
 - `orch.Jobs` 1—* `orch.Tasks` (a job has many tasks)
 - `orch.Tasks.TaskType` → `orch.TaskType` (each task has one type)
-- `orch.Tasks`/`orch.Jobs` → `orch.ObjectIDs` (both resolve their Fabric object identity through this table)
+- `orch.Tasks` → `orch.ObjectIDs` (FK-enforced, two constraints: `JobName`-side and `ObjectName`-side). `orch.Jobs` also resolves its identity through this table via `nb_RefreshObjectIDs`, but that link is no longer FK-enforced (`FK_Jobs_ObjectIDs` dropped as unused).
 - `orch.JobDependencies` — edges between `orch.Jobs` rows, each gated on an `orch.DependencyCondition`
 - `orch.TaskDependencies` — edges between `orch.Tasks` rows, each gated on an `orch.DependencyCondition`
 - `orch.Jobs`/`orch.Tasks`/`log.ActivityRunEvent`/`log.JobRunEvent`/`log.TaskRunEvent` → `log.LoggingLevel` (shared verbosity control)

@@ -4,7 +4,7 @@ erDiagram
         bit Include
         int TimeoutInSeconds
         int Retries
-        varchar WorkspaceName FK
+        varchar WorkspaceName
         tinyint LoggingLevel FK
     }
     Tasks {
@@ -72,7 +72,6 @@ erDiagram
     }
 
     Jobs ||--o{ Tasks : "has"
-    Jobs }o--|| ObjectIDs : "FK_Jobs_ObjectIDs (WorkspaceName, JobName)"
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Job (WorkspaceName, JobName)"
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"

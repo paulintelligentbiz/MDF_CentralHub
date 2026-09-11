@@ -60,6 +60,8 @@ BEGIN
         @ErrorCode, @EventErrorMessage, @ErrorFailureType, @ErrorTarget, @ErrorDetails, @RetryAttempt, @IterationHash,
         @UserPropertiesJson, @RecoveryStatus, @IntegrationRuntimeNames, @ExecutionDetailsJson, @ResourceId
     );
+
+    SELECT @RunLogId AS RunLogId;
 END;
 
 GO
