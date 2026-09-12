@@ -21,21 +21,35 @@ CREATE   PROCEDURE log.spLogPipelineRunEvent
     @StartTimeUtc    datetime2     = NULL,
     @EndTimeUtc      datetime2     = NULL,
     @FailureReason   nvarchar(max) = NULL,
-    @RunLogId        bigint        = NULL OUTPUT
+    -- Pass the PipelineRunEventId an ancestor event already opened to fold this Pipeline run
+    -- under that same run instead of minting an unrelated one -- see spLogActivityRunEvent
+    -- for the pattern this is modeled on.
+    @ExistingPipelineRunEventId bigint = NULL,
+    -- The Job run that invoked this pipeline, if any -- stored as a real FK on
+    -- PipelineRunEvent rather than relied on via a shared RunLogId value.
+    @JobRunEventId   bigint        = NULL,
+    @PipelineRunEventId bigint     = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     SET @RunID = ISNULL(@RunID, CONVERT(nvarchar(200), NEWID()));
 
-    INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
-    VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
+    IF @ExistingPipelineRunEventId IS NULL
+    BEGIN
+        INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
+        VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
 
-    SET @RunLogId = SCOPE_IDENTITY();
+        SET @PipelineRunEventId = SCOPE_IDENTITY();
+    END
+    ELSE
+        SET @PipelineRunEventId = @ExistingPipelineRunEventId;
 
-    INSERT INTO log.JobRunEvent (RunLogId, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
-    VALUES (@RunLogId, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @EventStatus, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
+    -- Was inserting into log.JobRunEvent -- a copy-paste leftover from spLogJobRunEvent that
+    -- went unnoticed because no pipeline calls this proc yet. Fixed to the correct table.
+    INSERT INTO log.PipelineRunEvent (PipelineRunEventId, JobRunEventId, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
+    VALUES (@PipelineRunEventId, @JobRunEventId, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @EventStatus, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
 
-    SELECT @RunLogId AS RunLogId;
+    SELECT @PipelineRunEventId AS PipelineRunEventId;
 END;
 
 GO

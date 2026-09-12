@@ -1,5 +1,9 @@
 CREATE   PROCEDURE log.spInsertActivityRunEvent
-    @RunLogId                bigint,  -- required -- the ActivityRunEvent row opened by spLogActivityRunEvent
+    -- Identifies the row to close. RunLogId can be shared with a parent Task/Pipeline/Job run
+    -- (see spLogActivityRunEvent) and so is no longer unique to one ActivityRunEvent row --
+    -- ActivityRunId is what pins the close to the specific row spLogActivityRunEvent opened,
+    -- not every row under that RunLogId. Pass back exactly the ActivityRunId it returned.
+    @ActivityRunId           nvarchar(100),
     @RunID                   nvarchar(200)  = NULL,
     @JobName                 nvarchar(200)  = NULL,
     @TaskName                nvarchar(200)  = NULL,
@@ -20,13 +24,16 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- Regardless of Status (Succeeded or Failed), stamp an end time -- never leave a closed
+    -- record's end time NULL just because a caller omitted it.
+    SET @ActivityRunEnd = ISNULL(@ActivityRunEnd, SYSUTCDATETIME());
+
     -- Closing entry in the RunLog ledger.
     INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, StopTime, Status, ErrorMessage)
     VALUES (@RunID, @JobName, @TaskName, @TaskType, @ActivityRunEnd, @Status, @ErrorMessage);
 
-    -- Close out the single ActivityRunEvent row opened by spLogActivityRunEvent.
-    -- (Previously an INSERT here; changed to UPDATE to avoid duplicating/orphaning rows
-    -- once callers started reusing the RunLogId captured at activity start.)
+    -- Close out the single ActivityRunEvent row opened by spLogActivityRunEvent, identified by
+    -- ActivityRunId -- not RunLogId, which other activities under the same parent run now share.
     UPDATE log.ActivityRunEvent
     SET Status = @Status,
         ActivityRunEnd = @ActivityRunEnd,
@@ -40,7 +47,7 @@ BEGIN
         RetryAttempt = @RetryAttempt,
         RecoveryStatus = @RecoveryStatus,
         ExecutionDetailsJson = @ExecutionDetailsJson
-    WHERE RunLogId = @RunLogId;
+    WHERE ActivityRunId = @ActivityRunId;
 END;
 
 GO

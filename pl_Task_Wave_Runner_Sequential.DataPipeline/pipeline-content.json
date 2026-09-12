@@ -27,7 +27,8 @@
                   "RunID": "@pipeline().parameters.RunID",
                   "ObjectID": "@item().ObjectID",
                   "WorkspaceID": "@item().WorkspaceID",
-                  "LoggingLevel": "@item().LoggingLevel"
+                  "LoggingLevel": "@item().LoggingLevel",
+                  "JobRunEventId": "@pipeline().parameters.JobRunEventId"
                 },
                 "waitOnCompletion": true
               },
@@ -51,6 +52,9 @@
         "type": "string"
       },
       "TasksJson": {
+        "type": "string"
+      },
+      "JobRunEventId": {
         "type": "string"
       }
     }

@@ -51,7 +51,8 @@
 ParametersJson = (
     '{"sourceSchema": "dbo", "sourceTable": "REPLACE_ME", '
     '"destWorkspaceId": "947d3136-33ac-458a-be73-ac7dc38afaa5", '
-    '"destLakehouseId": "649b7795-2e22-4627-8b25-9749a6f492f0"}'
+    '"destLakehouseId": "649b7795-2e22-4627-8b25-9749a6f492f0", '
+    '"destSchema": "dbo"}'
 )
 
 
@@ -66,13 +67,18 @@ SOURCE_TABLE = params["sourceTable"]
 DEST_WORKSPACE_ID = params["destWorkspaceId"]
 DEST_LAKEHOUSE_ID = params["destLakehouseId"]
 DEST_TABLE = params.get("destTable", SOURCE_TABLE)
+# Destination lakehouse is schema-enabled -- a table written to Tables/<name>
+# directly (no schema segment) lands outside any schema and Fabric can't
+# recognize it as a table ("Unable to identify these objects as tables or
+# views"). "dbo" is the default schema unless ParametersJson says otherwise.
+DEST_SCHEMA = params.get("destSchema", "dbo")
 
 # "source connection" (ContosoDW-DEV) -- see /topics/database-connections.md
 SOURCE_SERVER = "paulsdemos.database.windows.net"
 SOURCE_DATABASE = "ContosoDW-DEV"
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 
-print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_TABLE}")
+print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE}")
 
 
 # CELL ********************
@@ -143,7 +149,7 @@ print(f"Read {len(df)} rows, {len(df.columns)} columns from {SOURCE_SCHEMA}.{SOU
 # metadata in the Tasks table, not notebook configuration.
 dest_path = (
     f"abfss://{DEST_WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/"
-    f"{DEST_LAKEHOUSE_ID}/Tables/{DEST_TABLE}"
+    f"{DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE}"
 )
 spark_df = spark.createDataFrame(df)
 spark_df.write.format("delta").mode("overwrite").save(dest_path)
@@ -159,8 +165,15 @@ print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows)")
 #   real notebook ID + workspace ID, from the Fabric portal after import).
 # - One `orch.Tasks` row per source table, all with the same `ObjectName` (this
 #   notebook), each with its own `ParametersJson`
-#   (`{"sourceSchema":"dbo","sourceTable":"...","destWorkspaceId":"...","destLakehouseId":"..."}`) --
+#   (`{"sourceSchema":"dbo","sourceTable":"...","destWorkspaceId":"...","destLakehouseId":"...","destSchema":"dbo"}`) --
 #   destination is per-Task data, not something set on the notebook.
+# - If the destination lakehouse is schema-enabled, `destSchema` (default "dbo")
+#   must be set correctly, or Fabric won't recognize the written table at all --
+#   it'll show as an "Unidentified" orphan folder instead of a table. Any table
+#   already written before this fix landed at the old `Tables/<name>` path (no
+#   schema segment) and needs that stale folder deleted before re-running, since
+#   `mode("overwrite")` targets a path, not a table name -- writing to the
+#   correct `Tables/dbo/<name>` path won't clean up the old orphaned one.
 # - Incremental follow-up: add a watermark column + last-value tracking (a small
 #   control table, or `MERGE` on write) once the full-load test is confirmed working.
 

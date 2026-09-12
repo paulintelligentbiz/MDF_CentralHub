@@ -181,9 +181,9 @@
       {
         "type": "SetVariable",
         "typeProperties": {
-          "variableName": "JobRunLogId",
+          "variableName": "JobRunEventId",
           "value": {
-            "value": "@string(activity('Log Job Start').output.firstRow.RunLogId)",
+            "value": "@string(activity('Log Job Start').output.firstRow.JobRunEventId)",
             "type": "Expression"
           }
         },
@@ -191,7 +191,7 @@
           "secureInput": false,
           "secureOutput": false
         },
-        "name": "Set Job RunLogId",
+        "name": "Set Job RunEventId",
         "dependsOn": [
           {
             "activity": "Log Job Start",
@@ -303,6 +303,10 @@
                                   "TasksJson": {
                                     "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
                                     "type": "Expression"
+                                  },
+                                  "JobRunEventId": {
+                                    "value": "@variables('JobRunEventId')",
+                                    "type": "Expression"
                                   }
                                 },
                                 "waitOnCompletion": true
@@ -336,6 +340,10 @@
                                   },
                                   "TasksJson": {
                                     "value": "@activity('Get Next Wave').output.firstRow.TasksJson",
+                                    "type": "Expression"
+                                  },
+                                  "JobRunEventId": {
+                                    "value": "@variables('JobRunEventId')",
                                     "type": "Expression"
                                   }
                                 },
@@ -481,7 +489,7 @@
         "name": "Until All Tasks Done",
         "dependsOn": [
           {
-            "activity": "Set Job RunLogId",
+            "activity": "Set Job RunEventId",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -493,13 +501,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertJobRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@int(variables('JobRunLogId'))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "Status": {
               "value": {
                 "value": "@variables('FinalStatus')",
@@ -527,6 +528,13 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "JobRunEventId": {
+              "value": {
+                "value": "@int(variables('JobRunEventId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
             }
           }
         },
@@ -566,13 +574,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertJobRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@if(empty(variables('JobRunLogId')), -1, int(variables('JobRunLogId')))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "RunID": {
               "value": {
                 "value": "@variables('RunID')",
@@ -604,6 +605,13 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "JobRunEventId": {
+              "value": {
+                "value": "@if(empty(variables('JobRunEventId')), -1, int(variables('JobRunEventId')))",
+                "type": "Expression"
+              },
+              "type": "Int64"
             }
           }
         },
@@ -652,7 +660,7 @@
       "Done": {
         "type": "Boolean"
       },
-      "JobRunLogId": {
+      "JobRunEventId": {
         "type": "String"
       },
       "FinalStatus": {

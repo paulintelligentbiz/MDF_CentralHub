@@ -1,5 +1,5 @@
 CREATE   PROCEDURE log.spInsertTaskRunEvent
-    @RunLogId      bigint,  -- required -- the TaskRunEvent row opened by spLogTaskRunEvent
+    @TaskRunEventId bigint,  -- required -- the TaskRunEvent row opened by spLogTaskRunEvent
     @RunID         nvarchar(200),
     @JobName       varchar(200),
     @TaskName      varchar(200),
@@ -12,6 +12,10 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- Regardless of Status (Succeeded or Failed), stamp an end time -- never leave a closed
+    -- record's end time NULL just because a caller omitted it.
+    SET @EndTimeUtc = ISNULL(@EndTimeUtc, SYSUTCDATETIME());
+
     -- Closing entry in the RunLog ledger -- this is what orch.spGetNextWave / orch.spGetRunStatus
     -- actually query (by TaskName + Status) to know a task succeeded or failed.
     INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, StopTime, Status, ExitValue, ErrorMessage)
@@ -21,7 +25,7 @@ BEGIN
     UPDATE log.TaskRunEvent
     SET Status = @Status,
         EndTimeUtc = @EndTimeUtc
-    WHERE RunLogId = @RunLogId;
+    WHERE TaskRunEventId = @TaskRunEventId;
 END;
 
 GO

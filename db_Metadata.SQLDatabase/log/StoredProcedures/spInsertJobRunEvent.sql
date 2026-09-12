@@ -1,5 +1,5 @@
 CREATE   PROCEDURE log.spInsertJobRunEvent
-    @RunLogId       bigint,  -- required -- the JobRunEvent row opened by spLogJobRunEvent
+    @JobRunEventId  bigint,  -- required -- the JobRunEvent row opened by spLogJobRunEvent
     @RunID          nvarchar(200),
     @JobName        varchar(200),
     @Status         nvarchar(50)   = NULL,
@@ -9,6 +9,10 @@ CREATE   PROCEDURE log.spInsertJobRunEvent
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    -- Regardless of Status (Succeeded or Failed), stamp an end time -- never leave a closed
+    -- record's end time NULL just because a caller omitted it.
+    SET @EndTimeUtc = ISNULL(@EndTimeUtc, SYSUTCDATETIME());
 
     -- Closing entry in the RunLog ledger.
     INSERT INTO log.RunLog (RunID, JobName, StopTime, Status, ExitValue, ErrorMessage)
@@ -21,7 +25,7 @@ BEGIN
     SET Status = @Status,
         EndTimeUtc = @EndTimeUtc,
         FailureReason = @FailureReason
-    WHERE RunLogId = @RunLogId;
+    WHERE JobRunEventId = @JobRunEventId;
 END;
 
 GO

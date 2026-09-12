@@ -21,21 +21,30 @@ CREATE   PROCEDURE log.spLogJobRunEvent
     @StartTimeUtc    datetime2     = NULL,
     @EndTimeUtc      datetime2     = NULL,
     @FailureReason   nvarchar(max) = NULL,
-    @RunLogId        bigint        = NULL OUTPUT
+    -- Pass the JobRunEventId an ancestor event already opened to fold this Job under that
+    -- same run instead of minting an unrelated one -- see spLogActivityRunEvent for the
+    -- pattern this is modeled on.
+    @ExistingJobRunEventId bigint  = NULL,
+    @JobRunEventId   bigint        = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     SET @RunID = ISNULL(@RunID, CONVERT(nvarchar(200), NEWID()));
 
-    INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
-    VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
+    IF @ExistingJobRunEventId IS NULL
+    BEGIN
+        INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
+        VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
 
-    SET @RunLogId = SCOPE_IDENTITY();
+        SET @JobRunEventId = SCOPE_IDENTITY();
+    END
+    ELSE
+        SET @JobRunEventId = @ExistingJobRunEventId;
 
-    INSERT INTO log.JobRunEvent (RunLogId, JobName, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
-    VALUES (@RunLogId, @JobName, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @EventStatus, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
+    INSERT INTO log.JobRunEvent (JobRunEventId, JobName, LoggingLevel, JobInstanceId, ItemId, JobType, InvokeType, Status, RootActivityId, StartTimeUtc, EndTimeUtc, FailureReason)
+    VALUES (@JobRunEventId, @JobName, @LoggingLevel, @JobInstanceId, @ItemId, @JobType, @InvokeType, @EventStatus, @RootActivityId, @StartTimeUtc, @EndTimeUtc, @FailureReason);
 
-    SELECT @RunLogId AS RunLogId;
+    SELECT @JobRunEventId AS JobRunEventId;
 END;
 
 GO

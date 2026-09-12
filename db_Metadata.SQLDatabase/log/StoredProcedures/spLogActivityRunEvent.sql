@@ -36,6 +36,14 @@ CREATE   PROCEDURE log.spLogActivityRunEvent
     @IntegrationRuntimeNames  nvarchar(max)  = NULL,
     @ExecutionDetailsJson     nvarchar(max)  = NULL,
     @ResourceId               nvarchar(1000) = NULL,
+    -- Pass the RunLogId a parent Task (or Pipeline/Job) run already opened -- e.g. the value
+    -- spLogTaskRunEvent handed back -- so this Activity's row lands under that same run
+    -- instead of a disconnected one of its own. ActivityRunEvent's PK is ActivityRunId, not
+    -- RunLogId, precisely so several activities can share one parent RunLogId this way.
+    @ExistingRunLogId         bigint         = NULL,
+    -- The Job run this activity executed under, if any -- stored as a real FK on
+    -- ActivityRunEvent rather than relied on via a shared RunLogId value.
+    @JobRunEventId            bigint         = NULL,
     @RunLogId                 bigint         = NULL OUTPUT
 AS
 BEGIN
@@ -43,25 +51,33 @@ BEGIN
     SET @RunID = ISNULL(@RunID, CONVERT(nvarchar(200), NEWID()));
     SET @ActivityRunId = ISNULL(@ActivityRunId, CONVERT(nvarchar(100), NEWID()));
 
-    INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
-    VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
+    IF @ExistingRunLogId IS NULL
+    BEGIN
+        INSERT INTO log.RunLog (RunID, JobName, TaskName, TaskType, ObjectPath, StartTime, StopTime, ExitValue, ErrorMessage, Status)
+        VALUES (@RunID, @JobName, @TaskName, @TaskType, @ObjectPath, @StartTime, @StopTime, @ExitValue, @ErrorMessage, @Status);
 
-    SET @RunLogId = SCOPE_IDENTITY();
+        SET @RunLogId = SCOPE_IDENTITY();
+    END
+    ELSE
+        SET @RunLogId = @ExistingRunLogId;
 
     INSERT INTO log.ActivityRunEvent (
-        RunLogId, LoggingLevel, ActivityRunId, TaskName, TaskInstanceId, ActivityName, ActivityType,
+        RunLogId, JobRunEventId, LoggingLevel, ActivityRunId, TaskName, TaskInstanceId, ActivityName, ActivityType,
         LinkedServiceName, Status, ActivityRunStart, ActivityRunEnd, DurationInMs, InputJson, OutputJson,
         ErrorCode, ErrorMessage, ErrorFailureType, ErrorTarget, ErrorDetails, RetryAttempt, IterationHash,
         UserPropertiesJson, RecoveryStatus, IntegrationRuntimeNames, ExecutionDetailsJson, ResourceId
     )
     VALUES (
-        @RunLogId, @LoggingLevel, @ActivityRunId, @EventTaskName, @TaskInstanceId, @ActivityName, @ActivityType,
+        @RunLogId, @JobRunEventId, @LoggingLevel, @ActivityRunId, @EventTaskName, @TaskInstanceId, @ActivityName, @ActivityType,
         @LinkedServiceName, @EventStatus, @ActivityRunStart, @ActivityRunEnd, @DurationInMs, @InputJson, @OutputJson,
         @ErrorCode, @EventErrorMessage, @ErrorFailureType, @ErrorTarget, @ErrorDetails, @RetryAttempt, @IterationHash,
         @UserPropertiesJson, @RecoveryStatus, @IntegrationRuntimeNames, @ExecutionDetailsJson, @ResourceId
     );
 
-    SELECT @RunLogId AS RunLogId;
+    -- ActivityRunId returned alongside RunLogId: needed by spInsertActivityRunEvent's caller
+    -- to close out exactly this row, since RunLogId is no longer unique to one activity once
+    -- it's shared with a parent Task/Pipeline/Job run.
+    SELECT @RunLogId AS RunLogId, @ActivityRunId AS ActivityRunId;
 END;
 
 GO

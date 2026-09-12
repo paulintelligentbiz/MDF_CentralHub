@@ -39,6 +39,10 @@
               "StartTimeUtc": {
                 "value": "@utcnow()",
                 "type": "String"
+              },
+              "JobRunEventId": {
+                "value": "@pipeline().parameters.JobRunEventId",
+                "type": "Int64"
               }
             },
             "partitionOption": "None",
@@ -77,14 +81,14 @@
       {
         "type": "SetVariable",
         "typeProperties": {
-          "variableName": "TaskRunLogId",
-          "value": "@string(activity('Log Task Start').output.firstRow.RunLogId)"
+          "variableName": "TaskRunEventId",
+          "value": "@string(activity('Log Task Start').output.firstRow.TaskRunEventId)"
         },
         "policy": {
           "secureInput": false,
           "secureOutput": false
         },
-        "name": "Set Task RunLogId",
+        "name": "Set Task RunEventId",
         "dependsOn": [
           {
             "activity": "Log Task Start",
@@ -155,6 +159,14 @@
                         "ActivityRunStart": {
                           "value": "@utcnow()",
                           "type": "String"
+                        },
+                        "ExistingRunLogId": {
+                          "value": "@variables('TaskRunEventId')",
+                          "type": "Int64"
+                        },
+                        "JobRunEventId": {
+                          "value": "@pipeline().parameters.JobRunEventId",
+                          "type": "Int64"
                         }
                       },
                       "partitionOption": "None",
@@ -193,14 +205,14 @@
                 {
                   "type": "SetVariable",
                   "typeProperties": {
-                    "variableName": "ActivityRunLogId",
-                    "value": "@string(activity('Log Activity Start - CopyJob').output.firstRow.RunLogId)"
+                    "variableName": "ActivityRunId",
+                    "value": "@activity('Log Activity Start - CopyJob').output.firstRow.ActivityRunId"
                   },
                   "policy": {
                     "secureInput": false,
                     "secureOutput": false
                   },
-                  "name": "Set Activity RunLogId - CopyJob",
+                  "name": "Set Activity RunId - CopyJob",
                   "dependsOn": [
                     {
                       "activity": "Log Activity Start - CopyJob",
@@ -234,7 +246,7 @@
                   "onInactiveMarkAs": "Succeeded",
                   "dependsOn": [
                     {
-                      "activity": "Set Activity RunLogId - CopyJob",
+                      "activity": "Set Activity RunId - CopyJob",
                       "dependencyConditions": [
                         "Succeeded"
                       ]
@@ -296,6 +308,14 @@
                         "ActivityRunStart": {
                           "value": "@utcnow()",
                           "type": "String"
+                        },
+                        "ExistingRunLogId": {
+                          "value": "@variables('TaskRunEventId')",
+                          "type": "Int64"
+                        },
+                        "JobRunEventId": {
+                          "value": "@pipeline().parameters.JobRunEventId",
+                          "type": "Int64"
                         }
                       },
                       "partitionOption": "None",
@@ -334,14 +354,14 @@
                 {
                   "type": "SetVariable",
                   "typeProperties": {
-                    "variableName": "ActivityRunLogId",
-                    "value": "@string(activity('Log Activity Start - Notebook').output.firstRow.RunLogId)"
+                    "variableName": "ActivityRunId",
+                    "value": "@activity('Log Activity Start - Notebook').output.firstRow.ActivityRunId"
                   },
                   "policy": {
                     "secureInput": false,
                     "secureOutput": false
                   },
-                  "name": "Set Activity RunLogId - Notebook",
+                  "name": "Set Activity RunId - Notebook",
                   "dependsOn": [
                     {
                       "activity": "Log Activity Start - Notebook",
@@ -379,7 +399,7 @@
                   "name": "Run Notebook",
                   "dependsOn": [
                     {
-                      "activity": "Set Activity RunLogId - Notebook",
+                      "activity": "Set Activity RunId - Notebook",
                       "dependencyConditions": [
                         "Succeeded"
                       ]
@@ -441,6 +461,14 @@
                         "ActivityRunStart": {
                           "value": "@utcnow()",
                           "type": "String"
+                        },
+                        "ExistingRunLogId": {
+                          "value": "@variables('TaskRunEventId')",
+                          "type": "Int64"
+                        },
+                        "JobRunEventId": {
+                          "value": "@pipeline().parameters.JobRunEventId",
+                          "type": "Int64"
                         }
                       },
                       "partitionOption": "None",
@@ -479,14 +507,14 @@
                 {
                   "type": "SetVariable",
                   "typeProperties": {
-                    "variableName": "ActivityRunLogId",
-                    "value": "@string(activity('Log Activity Start - StoredProcedure').output.firstRow.RunLogId)"
+                    "variableName": "ActivityRunId",
+                    "value": "@activity('Log Activity Start - StoredProcedure').output.firstRow.ActivityRunId"
                   },
                   "policy": {
                     "secureInput": false,
                     "secureOutput": false
                   },
-                  "name": "Set Activity RunLogId - StoredProcedure",
+                  "name": "Set Activity RunId - StoredProcedure",
                   "dependsOn": [
                     {
                       "activity": "Log Activity Start - StoredProcedure",
@@ -528,7 +556,7 @@
                   "name": "Run Stored Procedure",
                   "dependsOn": [
                     {
-                      "activity": "Set Activity RunLogId - StoredProcedure",
+                      "activity": "Set Activity RunId - StoredProcedure",
                       "dependencyConditions": [
                         "Succeeded"
                       ]
@@ -590,6 +618,14 @@
                         "ActivityRunStart": {
                           "value": "@utcnow()",
                           "type": "String"
+                        },
+                        "ExistingRunLogId": {
+                          "value": "@variables('TaskRunEventId')",
+                          "type": "Int64"
+                        },
+                        "JobRunEventId": {
+                          "value": "@pipeline().parameters.JobRunEventId",
+                          "type": "Int64"
                         }
                       },
                       "partitionOption": "None",
@@ -628,14 +664,14 @@
                 {
                   "type": "SetVariable",
                   "typeProperties": {
-                    "variableName": "ActivityRunLogId",
-                    "value": "@string(activity('Log Activity Start - Dataflow').output.firstRow.RunLogId)"
+                    "variableName": "ActivityRunId",
+                    "value": "@activity('Log Activity Start - Dataflow').output.firstRow.ActivityRunId"
                   },
                   "policy": {
                     "secureInput": false,
                     "secureOutput": false
                   },
-                  "name": "Set Activity RunLogId - Dataflow",
+                  "name": "Set Activity RunId - Dataflow",
                   "dependsOn": [
                     {
                       "activity": "Log Activity Start - Dataflow",
@@ -668,7 +704,7 @@
                   "name": "Run Dataflow",
                   "dependsOn": [
                     {
-                      "activity": "Set Activity RunLogId - Dataflow",
+                      "activity": "Set Activity RunId - Dataflow",
                       "dependencyConditions": [
                         "Succeeded"
                       ]
@@ -697,7 +733,7 @@
         "name": "Switch On Task Type",
         "dependsOn": [
           {
-            "activity": "Set Task RunLogId",
+            "activity": "Set Task RunEventId",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -709,13 +745,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertActivityRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@int(variables('ActivityRunLogId'))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "RunID": {
               "value": {
                 "value": "@pipeline().parameters.RunID",
@@ -751,6 +780,13 @@
             "ActivityRunEnd": {
               "value": {
                 "value": "@utcnow()",
+                "type": "Expression"
+              },
+              "type": "String"
+            },
+            "ActivityRunId": {
+              "value": {
+                "value": "@variables('ActivityRunId')",
                 "type": "Expression"
               },
               "type": "String"
@@ -793,13 +829,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertActivityRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@int(variables('ActivityRunLogId'))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "RunID": {
               "value": {
                 "value": "@pipeline().parameters.RunID",
@@ -845,6 +874,13 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "ActivityRunId": {
+              "value": {
+                "value": "@variables('ActivityRunId')",
+                "type": "Expression"
+              },
+              "type": "String"
             }
           }
         },
@@ -884,13 +920,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertTaskRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@int(variables('TaskRunLogId'))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "RunID": {
               "value": {
                 "value": "@pipeline().parameters.RunID",
@@ -929,6 +958,13 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "TaskRunEventId": {
+              "value": {
+                "value": "@int(variables('TaskRunEventId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
             }
           }
         },
@@ -968,13 +1004,6 @@
         "typeProperties": {
           "storedProcedureName": "log.spInsertTaskRunEvent",
           "storedProcedureParameters": {
-            "RunLogId": {
-              "value": {
-                "value": "@int(variables('TaskRunLogId'))",
-                "type": "Expression"
-              },
-              "type": "Int64"
-            },
             "RunID": {
               "value": {
                 "value": "@pipeline().parameters.RunID",
@@ -1020,6 +1049,13 @@
                 "type": "Expression"
               },
               "type": "String"
+            },
+            "TaskRunEventId": {
+              "value": {
+                "value": "@int(variables('TaskRunEventId'))",
+                "type": "Expression"
+              },
+              "type": "Int64"
             }
           }
         },
@@ -1085,13 +1121,16 @@
       },
       "LoggingLevel": {
         "type": "int"
+      },
+      "JobRunEventId": {
+        "type": "string"
       }
     },
     "variables": {
-      "TaskRunLogId": {
+      "TaskRunEventId": {
         "type": "String"
       },
-      "ActivityRunLogId": {
+      "ActivityRunId": {
         "type": "String"
       }
     }
