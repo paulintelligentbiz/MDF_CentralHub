@@ -1,38 +1,53 @@
 # Drop all tables in the lh_Bronze_Wave_Test lakehouse
 #
 # Run this as a PySpark cell in a Fabric notebook with lh_Bronze_Wave_Test attached as the
-# default lakehouse (or set LAKEHOUSE_NAME to the exact name Fabric shows if it isn't
-# attached -- Spark resolves it as a catalog/database name either way).
+# default lakehouse.
 #
-# Iterates every schema in the lakehouse -- including "dbo", since this lakehouse has schema
-# support enabled -- and drops every table Spark's catalog recognizes there. A plain %%sql
-# cell can't do this (no loop construct), so the discovery + DROP TABLE calls are done here
-# in Python via spark.sql().
+# WHY THE EARLIER VERSIONS FAILED: spark.catalog.listDatabases() in this workspace returns
+# db.name as a single compound string, "Wave Data Medallion.lh_Bronze_Wave_Test" -- the
+# workspace name IS the catalog part of the fully-qualified name, and it has a space in it.
+# The first version built that into raw SQL text without quoting it. The second version
+# tried to sidestep that by handing the same raw string to spark.catalog.setCurrentDatabase()
+# / listTables() instead -- but those Catalog API calls re-parse the string internally too,
+# so the identical "Syntax error at or near 'Data'" came right back from inside the API, not
+# from anything this script wrote to spark.sql() directly.
 #
-# NOTE ON THE PARSE ERROR FROM THE FIRST VERSION: Fabric's workspace name ("Wave Data
-# Medallion") is itself the catalog part of the fully-qualified table name, and it has a
-# space in it. Gluing catalog.schema.table together as one raw SQL string and only
-# backtick-quoting pieces of it broke as soon as Spark's parser hit the unquoted space in
-# "Wave Data". This version sidesteps that entirely: spark.catalog.setCurrentDatabase()
-# switches into each schema through the Catalog API (which handles a space-containing
-# catalog/workspace name correctly on its own), so DROP TABLE only ever needs the plain
-# table name -- no manual quoting of the workspace or schema name required.
-#
-# NOTE: this only drops tables Spark's catalog can actually see. Any leftover "Unidentified"
-# folders under Tables/ (from a write that landed outside a schema, before the recent fix to
-# nb_CopyTableToBronze) won't be listed here, since Fabric never registered them as tables in
-# the first place -- see the optional cleanup cell at the bottom to remove those directly.
+# This version never lets Spark see an unquoted compound name: it splits each returned db
+# name on its first "." and backtick-quotes the two pieces itself before building any SQL,
+# using SHOW TABLES IN / DROP TABLE with that pre-quoted qualifier throughout -- so a
+# space (or any other special character) inside the workspace name can't break parsing.
 
 LAKEHOUSE_NAME = "lh_Bronze_Wave_Test"
+
+
+def quote_ident(name: str) -> str:
+    """Backtick-quote a single identifier segment, escaping any embedded backtick."""
+    return f"`{name.replace('`', '``')}`"
+
+
+def quote_qualified(db_name: str) -> str:
+    """db_name comes back as '<workspace name>.<lakehouse name>' in this workspace (one
+    string). Split on the first '.' and quote each part separately -- never re-parse the
+    combined string as SQL."""
+    parts = db_name.split(".", 1)
+    return ".".join(quote_ident(p) for p in parts)
+
 
 databases = [db.name for db in spark.catalog.listDatabases() if db.name != "information_schema"]
 
 dropped = []
-for db in databases:
-    spark.catalog.setCurrentDatabase(db)
-    for t in spark.catalog.listTables(db):
-        spark.sql(f"DROP TABLE IF EXISTS `{t.name}`")
-        dropped.append(f"{db}.{t.name}")
+for db_name in databases:
+    qualified_db = quote_qualified(db_name)
+    try:
+        tables = spark.sql(f"SHOW TABLES IN {qualified_db}").collect()
+    except Exception as e:
+        print(f"Skipping {db_name} -- could not list tables: {e}")
+        continue
+    for row in tables:
+        table_name = row["tableName"]
+        full_name = f"{qualified_db}.{quote_ident(table_name)}"
+        spark.sql(f"DROP TABLE IF EXISTS {full_name}")
+        dropped.append(f"{db_name}.{table_name}")
 
 print(f"Dropped {len(dropped)} table(s) from {LAKEHOUSE_NAME}:")
 for name in dropped:
