@@ -107,8 +107,25 @@ def connect_with_aad_token(server, database, driver=ODBC_DRIVER):
 
 import pyodbc
 
+# ODBC SQL type -151 (SQL_SS_UDT) covers geography/geometry/hierarchyid -- these
+# are CLR-based types that pyodbc/pandas can't decode from a plain SELECT *
+# ("ODBC SQL type -151 is not yet supported"). Any such column is explicitly
+# CONVERTed to its string form (WKT for spatial types, the string path for
+# hierarchyid) before the read, so this notebook can still land the table.
+UDT_TYPES = {"geography", "geometry", "hierarchyid"}
+
 with connect_with_aad_token(SOURCE_SERVER, SOURCE_DATABASE) as conn:
-    df = pd.read_sql(f"SELECT * FROM [{SOURCE_SCHEMA}].[{SOURCE_TABLE}]", conn)
+    cols_df = pd.read_sql(
+        "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+        conn, params=[SOURCE_SCHEMA, SOURCE_TABLE],
+    )
+    select_list = ", ".join(
+        f"CONVERT(NVARCHAR(MAX), [{r.COLUMN_NAME}]) AS [{r.COLUMN_NAME}]"
+        if r.DATA_TYPE in UDT_TYPES else f"[{r.COLUMN_NAME}]"
+        for r in cols_df.itertuples()
+    )
+    df = pd.read_sql(f"SELECT {select_list} FROM [{SOURCE_SCHEMA}].[{SOURCE_TABLE}]", conn)
 
 print(f"Read {len(df)} rows, {len(df.columns)} columns from {SOURCE_SCHEMA}.{SOURCE_TABLE}")
 

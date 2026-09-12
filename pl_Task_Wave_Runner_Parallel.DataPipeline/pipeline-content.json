@@ -5,7 +5,7 @@
         "type": "ForEach",
         "typeProperties": {
           "isSequential": false,
-          "batchCount": 20,
+          "batchCount": 4,
           "items": {
             "value": "@json(pipeline().parameters.TasksJson)",
             "type": "Expression"
