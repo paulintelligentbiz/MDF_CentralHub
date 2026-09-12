@@ -9,7 +9,7 @@ CREATE TABLE [orch].[TaskWatermark] (
     [ModifiedUtc]                    DATETIME2 (7)   CONSTRAINT [DF_TaskWatermark_ModifiedUtc] DEFAULT (SYSUTCDATETIME()) NOT NULL,
     CONSTRAINT [PK_TaskWatermark] PRIMARY KEY CLUSTERED ([TaskName] ASC),
     CONSTRAINT [FK_TaskWatermark_Task] FOREIGN KEY ([TaskName]) REFERENCES [orch].[Tasks] ([TaskName]),
-    CONSTRAINT [FK_TaskWatermark_WatermarkDataType] FOREIGN KEY ([WatermarkDataType]) REFERENCES [orch].[WatermarkDataType] ([WatermarkDataType])
+    CONSTRAINT [CK_TaskWatermark_WatermarkDataType] CHECK ([WatermarkDataType] IN ('DateTime', 'Numeric'))
 );
 
 
