@@ -3,7 +3,7 @@
 
 # MARKDOWN ********************
 
-# # nb_CopyTableToBronze
+# # nb_CopyTableToLakehouse
 # 
 # Generic, parameterized MDF task notebook: copies one source table into a
 # Bronze Delta table in whatever lakehouse the Task points it at. Invoked by
@@ -48,6 +48,14 @@
 # Default parameters -- overridden by pl_Task_Executor's base-parameters mapping
 # when this notebook is invoked as a "Notebook" Task. Runnable standalone with
 # these defaults for manual testing.
+#
+# Optional incremental keys (both omitted below -> full load, unchanged behavior):
+#   "watermarkColumn": the source column to filter/track on (must match a name in
+#     orch.TaskWatermark.WatermarkColumn for whichever Task calls this notebook).
+#   "watermarkValue": the last high-water value to read forward from -- an
+#     ISO-8601 string for a DateTime watermark, a plain number for a Numeric one
+#     (matching orch.WatermarkDataType). Typically supplied by pl_Task_Executor
+#     from orch.TaskWatermark, not hardcoded here.
 ParametersJson = (
     '{"sourceSchema": "dbo", "sourceTable": "REPLACE_ME", '
     '"destWorkspaceId": "947d3136-33ac-458a-be73-ac7dc38afaa5", '
@@ -73,12 +81,22 @@ DEST_TABLE = params.get("destTable", SOURCE_TABLE)
 # views"). "dbo" is the default schema unless ParametersJson says otherwise.
 DEST_SCHEMA = params.get("destSchema", "dbo")
 
+# Both present -> incremental load, filtered on this column/value and appended
+# rather than overwritten. Either one missing -> full load, exactly as before.
+WATERMARK_COLUMN = params.get("watermarkColumn")
+WATERMARK_VALUE = params.get("watermarkValue")
+INCREMENTAL = WATERMARK_COLUMN is not None and WATERMARK_VALUE is not None
+
 # "source connection" (ContosoDW-DEV) -- see /topics/database-connections.md
 SOURCE_SERVER = "paulsdemos.database.windows.net"
 SOURCE_DATABASE = "ContosoDW-DEV"
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 
-print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE}")
+if INCREMENTAL:
+    print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE} "
+          f"(incremental: {WATERMARK_COLUMN} > {WATERMARK_VALUE!r})")
+else:
+    print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE} (full load)")
 
 
 # CELL ********************
@@ -131,16 +149,27 @@ with connect_with_aad_token(SOURCE_SERVER, SOURCE_DATABASE) as conn:
         if r.DATA_TYPE in UDT_TYPES else f"[{r.COLUMN_NAME}]"
         for r in cols_df.itertuples()
     )
-    df = pd.read_sql(f"SELECT {select_list} FROM [{SOURCE_SCHEMA}].[{SOURCE_TABLE}]", conn)
+    query = f"SELECT {select_list} FROM [{SOURCE_SCHEMA}].[{SOURCE_TABLE}]"
+    read_params = []
+    if INCREMENTAL:
+        # WATERMARK_COLUMN names an identifier (bracket-quoted like SOURCE_SCHEMA/
+        # SOURCE_TABLE above, both driven by the same trusted orch.Tasks metadata,
+        # not end-user input); WATERMARK_VALUE is a value, so it's bound as a
+        # parameter rather than interpolated.
+        query += f" WHERE [{WATERMARK_COLUMN}] > ?"
+        read_params.append(WATERMARK_VALUE)
+    df = pd.read_sql(query, conn, params=read_params or None)
 
 print(f"Read {len(df)} rows, {len(df.columns)} columns from {SOURCE_SCHEMA}.{SOURCE_TABLE}")
 
 
 # CELL ********************
 
-# Full overwrite for this initial test. A future incremental version of this
-# notebook would branch here: append + watermark filter on the read side, or
-# a MERGE/upsert on write, driven by extra fields in ParametersJson.
+# Full overwrite for a full load; append for an incremental one (the rows read
+# above are already filtered to just the new/changed ones in that case, so
+# overwriting would discard everything already landed). A future upsert
+# version could MERGE on write instead, driven by extra ParametersJson fields,
+# for sources where the same key can reappear with an updated watermark value.
 #
 # Written to an explicit OneLake path -- not saveAsTable against an attached
 # default lakehouse -- so this notebook can target *any* lakehouse the
@@ -151,10 +180,50 @@ dest_path = (
     f"abfss://{DEST_WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/"
     f"{DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE}"
 )
+WRITE_MODE = "append" if INCREMENTAL else "overwrite"
 spark_df = spark.createDataFrame(df)
-spark_df.write.format("delta").mode("overwrite").save(dest_path)
+spark_df.write.format("delta").mode(WRITE_MODE).save(dest_path)
 
-print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows)")
+print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows, mode={WRITE_MODE})")
+
+
+# CELL ********************
+
+# Hand the new high-water value back to the caller. This notebook only computes
+# it -- it has no connection to db_Metadata and doesn't write orch.TaskWatermark
+# itself (that stays owned by pipeline activities, same as every other
+# orch.*/log.* read or write in this framework). Advancing the stored watermark
+# from this exit value, and only after the Task's overall run is confirmed
+# successful (see the Previous*/current split on orch.TaskWatermark), is
+# follow-up pipeline work, not implemented yet.
+try:
+    import notebookutils
+except ImportError:
+    notebookutils = None  # allows py_compile / unit tests outside a Fabric runtime
+
+if INCREMENTAL:
+    if len(df) > 0:
+        new_watermark_value = df[WATERMARK_COLUMN].max()
+        # pandas/numpy scalars (Timestamp, int64, ...) aren't JSON-serializable
+        # as-is -- normalize to a plain str/int/float first.
+        if hasattr(new_watermark_value, "isoformat"):
+            new_watermark_value = new_watermark_value.isoformat()
+        elif hasattr(new_watermark_value, "item"):
+            new_watermark_value = new_watermark_value.item()
+        print(f"New watermark candidate for {WATERMARK_COLUMN}: {new_watermark_value}")
+    else:
+        new_watermark_value = None
+        print("No rows read -- watermark unchanged.")
+
+    exit_payload = json.dumps({
+        "watermarkColumn": WATERMARK_COLUMN,
+        "previousWatermarkValue": WATERMARK_VALUE,
+        "newWatermarkValue": new_watermark_value,
+    })
+    if notebookutils is not None:
+        notebookutils.notebook.exit(exit_payload)
+    else:
+        print(f"notebookutils unavailable (not running in a Fabric session) -- would exit with: {exit_payload}")
 
 
 # MARKDOWN ********************
@@ -174,6 +243,12 @@ print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows)")
 #   schema segment) and needs that stale folder deleted before re-running, since
 #   `mode("overwrite")` targets a path, not a table name -- writing to the
 #   correct `Tables/dbo/<name>` path won't clean up the old orphaned one.
-# - Incremental follow-up: add a watermark column + last-value tracking (a small
-#   control table, or `MERGE` on write) once the full-load test is confirmed working.
+# - Incremental loads: pass `watermarkColumn`/`watermarkValue` in `ParametersJson` and this
+#   notebook filters the read, appends instead of overwriting, and exits with the new
+#   high-water value as JSON. `orch.TaskWatermark` (with its `Previous*` columns) is where
+#   that value should land, but nothing yet calls a proc to actually store it there --
+#   `pl_Task_Executor` needs a step added that reads this notebook's exit value and
+#   advances `orch.TaskWatermark` only after the Task's overall run succeeds.
+# - Upsert follow-up: `MERGE` on write, for sources where a previously-seen key can
+#   reappear with a newer watermark value instead of always being a new row.
 

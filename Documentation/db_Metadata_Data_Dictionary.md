@@ -82,7 +82,7 @@ Small lookup table mapping a human-readable (WorkspaceName, ObjectName) pair to 
 
 **Constraints:** `PRIMARY KEY CLUSTERED (WorkspaceName, ObjectName)`.
 
-**Current data** (from `orch_metadata.xlsx`, last pulled from the database): two rows, both in workspace `MDF_CentralHub` — `nb_CopyTableToBronze` and `nb_RefreshObjectIDs`, both still carrying placeholder `ObjectID` values (`PENDING_DEPLOYMENT_REPLACE_ME_...`) pending real deployment IDs.
+**Current data** (from `orch_metadata.xlsx`, last pulled from the database): two rows, both in workspace `MDF_CentralHub` — `nb_CopyTableToLakehouse` and `nb_RefreshObjectIDs`, both still carrying placeholder `ObjectID` values (`PENDING_DEPLOYMENT_REPLACE_ME_...`) pending real deployment IDs.
 
 ### orch.DependencyCondition
 

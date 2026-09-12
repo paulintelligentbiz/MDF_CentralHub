@@ -538,7 +538,7 @@ print(_url)
 # Destination is data-driven, not notebook configuration: each row's
 # ParametersJson carries destWorkspaceId/destLakehouseId for
 # lh_Bronze_Wave_Test (workspace 947d3136-33ac-458a-be73-ac7dc38afaa5 /
-# lakehouse 649b7795-2e22-4627-8b25-9749a6f492f0). nb_CopyTableToBronze
+# lakehouse 649b7795-2e22-4627-8b25-9749a6f492f0). nb_CopyTableToLakehouse
 # writes straight to that OneLake path -- no lakehouse needs to be attached
 # to the notebook.
 
@@ -579,7 +579,7 @@ new_task_rows = [
         "TaskName": f"CopyBronze_{t}",
         "Include": True,
         "JobName": "Ingest_ContosoDW_Bronze",
-        "ObjectName": "nb_CopyTableToBronze",
+        "ObjectName": "nb_CopyTableToLakehouse",
         "WorkspaceName": "Wave MDF CentralHub",
         "TimeoutInSeconds": 1800,
         "Retries": 1,
