@@ -372,6 +372,62 @@
                   ]
                 },
                 {
+                  "type": "Lookup",
+                  "typeProperties": {
+                    "source": {
+                      "type": "FabricSqlDatabaseSource",
+                      "sqlReaderStoredProcedureName": "orch.spGetTaskParametersJson",
+                      "storedProcedureParameters": {
+                        "TaskName": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "String"
+                        },
+                        "ParametersJson": {
+                          "value": "@pipeline().parameters.ParametersJson",
+                          "type": "String"
+                        }
+                      },
+                      "partitionOption": "None",
+                      "queryTimeout": "02:00:00"
+                    },
+                    "datasetSettings": {
+                      "type": "FabricSqlDatabaseTable",
+                      "schema": [],
+                      "connectionSettings": {
+                        "name": "db_Metadata",
+                        "properties": {
+                          "type": "FabricSqlDatabase",
+                          "typeProperties": {
+                            "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                            "workspaceId": "00000000-0000-0000-0000-000000000000"
+                          },
+                          "externalReferences": {
+                            "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+                          },
+                          "annotations": []
+                        }
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Get Task ParametersJson",
+                  "dependsOn": [
+                    {
+                      "activity": "Set Activity RunId - Notebook",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
+                {
                   "type": "TridentNotebook",
                   "typeProperties": {
                     "notebookId": {
@@ -384,7 +440,7 @@
                     },
                     "parameters": {
                       "ParametersJson": {
-                        "value": "@pipeline().parameters.ParametersJson",
+                        "value": "@activity('Get Task ParametersJson').output.firstRow.ParametersJson",
                         "type": "string"
                       }
                     }
@@ -399,7 +455,59 @@
                   "name": "Run Notebook",
                   "dependsOn": [
                     {
-                      "activity": "Set Activity RunId - Notebook",
+                      "activity": "Get Task ParametersJson",
+                      "dependencyConditions": [
+                        "Succeeded"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "SqlServerStoredProcedure",
+                  "typeProperties": {
+                    "storedProcedureName": "orch.spAdvanceTaskWatermark",
+                    "storedProcedureParameters": {
+                      "TaskName": {
+                        "value": {
+                          "value": "@pipeline().parameters.TaskName",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      },
+                      "NotebookExitJson": {
+                        "value": {
+                          "value": "@coalesce(activity('Run Notebook').output.result.exitValue, '')",
+                          "type": "Expression"
+                        },
+                        "type": "String"
+                      }
+                    }
+                  },
+                  "connectionSettings": {
+                    "name": "db_Metadata",
+                    "properties": {
+                      "type": "FabricSqlDatabase",
+                      "typeProperties": {
+                        "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
+                        "workspaceId": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "externalReferences": {
+                        "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureInput": false,
+                    "secureOutput": false
+                  },
+                  "name": "Advance Task Watermark",
+                  "dependsOn": [
+                    {
+                      "activity": "Run Notebook",
                       "dependencyConditions": [
                         "Succeeded"
                       ]
