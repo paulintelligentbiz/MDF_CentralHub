@@ -4,6 +4,7 @@ erDiagram
         bit Include
         int TimeoutInSeconds
         int Retries
+        int ParallelBatchLimit
         varchar WorkspaceName
         tinyint LoggingLevel FK
     }
@@ -46,13 +47,20 @@ erDiagram
         nvarchar Status
     }
     JobRunEvent {
-        bigint RunLogId PK,FK
+        bigint JobRunEventId PK,FK
         varchar JobName FK
         tinyint LoggingLevel FK
         nvarchar Status
     }
+    PipelineRunEvent {
+        bigint PipelineRunEventId PK,FK
+        bigint JobRunEventId FK
+        tinyint LoggingLevel FK
+        nvarchar Status
+    }
     TaskRunEvent {
-        bigint RunLogId PK,FK
+        bigint TaskRunEventId PK,FK
+        bigint JobRunEventId FK
         varchar JobName FK
         varchar TaskName FK
         tinyint LoggingLevel FK
@@ -61,6 +69,7 @@ erDiagram
     ActivityRunEvent {
         nvarchar ActivityRunId PK
         bigint RunLogId FK
+        bigint JobRunEventId FK
         tinyint LoggingLevel FK
         nvarchar TaskName
         nvarchar TaskInstanceId
@@ -84,6 +93,7 @@ erDiagram
     Jobs }o--|| LoggingLevel : "LoggingLevel"
     Tasks }o--|| LoggingLevel : "LoggingLevel"
     JobRunEvent }o--|| LoggingLevel : "LoggingLevel"
+    PipelineRunEvent }o--|| LoggingLevel : "LoggingLevel"
     TaskRunEvent }o--|| LoggingLevel : "LoggingLevel"
     ActivityRunEvent }o--|| LoggingLevel : "LoggingLevel"
 
@@ -91,6 +101,11 @@ erDiagram
     Jobs ||--o{ TaskRunEvent : "JobName"
     Tasks ||--o{ TaskRunEvent : "TaskName"
 
-    RunLog ||--o| JobRunEvent : "RunLogId"
-    RunLog ||--o| TaskRunEvent : "RunLogId"
-    RunLog ||--o{ ActivityRunEvent : "RunLogId"
+    RunLog ||--o| JobRunEvent : "JobRunEventId = RunLogId (opening row)"
+    RunLog ||--o| PipelineRunEvent : "PipelineRunEventId = RunLogId (opening row)"
+    RunLog ||--o| TaskRunEvent : "TaskRunEventId = RunLogId (opening row)"
+    RunLog ||--o{ ActivityRunEvent : "RunLogId (shareable w/ parent run)"
+
+    JobRunEvent ||--o| PipelineRunEvent : "JobRunEventId (run hierarchy)"
+    JobRunEvent ||--o{ TaskRunEvent : "JobRunEventId (run hierarchy)"
+    JobRunEvent ||--o{ ActivityRunEvent : "JobRunEventId (run hierarchy)"

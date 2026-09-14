@@ -145,15 +145,91 @@ The master run-history table — one row per executed task/pipeline run attempt,
 
 **Constraints/indexes:** `PRIMARY KEY CLUSTERED (RunLogId)`; nonclustered index on `(RunID, TaskName)`; nonclustered index on `(StartTime)` — both sized for exactly the lookups `spGetNextWave`/`spGetRunStatus` perform.
 
-### log.ActivityRunEvent
+> **Schema note:** every `log.spLog*` "open" procedure inserts its own new `log.RunLog` row and, unless handed an already-open ancestor event's ID (`@ExistingJobRunEventId`/`@ExistingPipelineRunEventId`/`@ExistingTaskRunEventId`/`@ExistingRunLogId`), takes that row's `IDENTITY` value as the new event row's *own* primary key — `JobRunEvent.JobRunEventId`, `PipelineRunEvent.PipelineRunEventId`, and `TaskRunEvent.TaskRunEventId` are literally equal to the `RunLogId` of the `RunLog` row each opened, not a separately-generated ID that happens to correlate. `log.spInsert*` "close" procedures then `UPDATE` that same event row by its own ID and additionally append a second, closing row straight to `RunLog` (so `RunLog` ends up with roughly two rows — open and close — for every one event-table row, plus every row any *other* level's open/close added along the way; it's a flat, append-only ledger shared across all four levels, not a 1:1 mirror of any single event table). `ActivityRunEvent` is the one exception to the "ID = RunLogId" pattern — see its own section below.
+>
+> Each of `JobRunEvent`, `PipelineRunEvent`, `TaskRunEvent`, and `ActivityRunEvent` also now carries its own nullable `JobRunEventId` foreign key back to `log.JobRunEvent` — a second, independent hierarchy link (nullable because a Task/Pipeline/Activity can run without a parent Job invoking it) that lets every descendant of a given Job run be found with a real FK join instead of by incidentally matching `RunLogId` values.
 
-Detailed, activity-level log capturing the full diagnostic detail of a single Fabric/Data Factory pipeline activity run (inputs, outputs, error detail, retry info) — a richer child record of one `log.RunLog` row, always logged from within `pl_Task_Executor` (i.e., in the context of one Task's execution). One row per activity attempt: opened by `spLogActivityRunEvent` (start — creates the `RunLog` + `ActivityRunEvent` rows together) and closed by `spInsertActivityRunEvent` (end/failure — `UPDATE`s that same row by `RunLogId`, and adds a closing `log.RunLog` entry). `pl_Task_Executor` now wraps each of the four real `TaskType` branches (`CopyJob`, `Notebook`, `StoredProcedure`, `Dataflow`) individually this way, on both the success and failure path.
+### log.JobRunEvent
 
-> **Fixed:** `spInsertActivityRunEvent` used to `INSERT` a second row reusing the same `RunLogId` the start call had already used — since nothing called it with a real `RunLogId` before, this hadn't surfaced yet, but it would have failed the moment anything did (no unique-per-call `RunLogId` was ever guaranteed). It's now an `UPDATE` keyed on `RunLogId`.
+The root of the run hierarchy. A run-event record for job-level invocations — tracking a job instance's own lifecycle/status. Every `PipelineRunEvent`/`TaskRunEvent`/`ActivityRunEvent` row can (optionally) point back to one of these via its own `JobRunEventId` FK.
 
 | Column | Data Type | Purpose |
 |---|---|---|
-| RunLogId | BIGINT NOT NULL | **Foreign key** to `log.RunLog` — the parent run-attempt this activity detail belongs to. |
+| JobRunEventId | BIGINT NOT NULL | **Primary key.** *(Renamed from the generic `RunLogId` every event table used to share.)* Also a foreign key to `log.RunLog` — equal to the `RunLogId` of the `RunLog` row `spLogJobRunEvent` opened for this job run. |
+| JobName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Jobs` — which job this run event belongs to. |
+| LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
+| JobInstanceId | NVARCHAR(100) NULL | Identifier for this specific instance/execution of the job. |
+| ItemId | NVARCHAR(100) NULL | Identifier of the Fabric item that was invoked. |
+| JobType | NVARCHAR(50) NULL | Type/category of job. |
+| InvokeType | NVARCHAR(50) NULL | How the job was invoked (e.g., `Sequential`, `Parallel`). |
+| Status | NVARCHAR(50) NULL | Outcome status of this job run. |
+| RootActivityId | NVARCHAR(100) NULL | Identifier of the top-level activity that initiated this job. |
+| StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC) for the job run. |
+| EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the job run. |
+| FailureReason | NVARCHAR(MAX) NULL | Reason for failure, if any. |
+
+**Constraints:** `PRIMARY KEY CLUSTERED (JobRunEventId)`; `FK_JobRunEvent_JobName FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_JobRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_JobRunEvent_RunLog FOREIGN KEY (JobRunEventId) REFERENCES log.RunLog (RunLogId)`.
+
+One row per Job run: opened by `spLogJobRunEvent` (start — creates the `RunLog` + `JobRunEvent` rows together, called from `pl_Orchestrator_Top_Level`'s "Log Job Start", passed the Job's own `LoggingLevel` via `orch.spGetJob`) and closed by `spInsertJobRunEvent` (end/failure — `UPDATE`s that same row by `JobRunEventId`, and adds a closing `log.RunLog` entry). The orchestrator pipeline has a genuine failure branch ("Log Job Failure", `dependencyConditions: ["Failed"]` on the task-processing loop) in addition to the success path, so a thrown exception or timeout no longer leaves the row stuck at `Status = 'Running'` forever.
+
+> **Fixed:** `spInsertJobRunEvent` used to `INSERT` a second row with the same ID `spLogJobRunEvent` had already used for this table's primary key — an unconditional primary-key violation the moment "Log Job End" ran. It's now an `UPDATE` keyed on `JobRunEventId`.
+
+### log.PipelineRunEvent
+
+A run-event record for pipeline-level invocations — logged by the two Wave Runner pipelines (`pl_Task_Wave_Runner_Parallel`/`pl_Task_Wave_Runner_Sequential`, "Log Pipeline Start"/"Log Pipeline End"/"Log Pipeline Failure") around each wave's `ForEach` loop. Has no `JobName`/`TaskName` column or FK of its own — it only relates back to `orch.Jobs` indirectly, through `JobRunEventId` → `JobRunEvent.JobName`.
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| PipelineRunEventId | BIGINT NOT NULL | **Primary key.** Also a foreign key to `log.RunLog` — equal to the `RunLogId` of the `RunLog` row `spLogPipelineRunEvent` opened for this pipeline run. |
+| JobRunEventId | BIGINT NULL | **Foreign key** to `log.JobRunEvent` — the Job run this pipeline executed under, if any (run-hierarchy link; nullable since a wave-runner pipeline could in principle run standalone). |
+| LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
+| JobInstanceId | NVARCHAR(100) NULL | Identifier for this specific instance/execution. |
+| ItemId | NVARCHAR(100) NULL | Identifier of the Fabric item that was invoked. |
+| JobType | NVARCHAR(50) NULL | Type/category of job. |
+| InvokeType | NVARCHAR(50) NULL | How the wave was invoked (e.g., `Sequential`, `Parallel`) — the Wave Runner pipelines populate this from their own name. |
+| Status | NVARCHAR(50) NULL | Outcome status of this pipeline run. |
+| RootActivityId | NVARCHAR(100) NULL | Identifier of the top-level activity that initiated this run. |
+| StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC). |
+| EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC). |
+| FailureReason | NVARCHAR(MAX) NULL | Reason for failure, if any. |
+
+**Constraints:** `PRIMARY KEY CLUSTERED (PipelineRunEventId)`; `FK_PipelineRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_PipelineRunEvent_RunLog FOREIGN KEY (PipelineRunEventId) REFERENCES log.RunLog (RunLogId)`; `FK_PipelineRunEvent_JobRunEvent FOREIGN KEY (JobRunEventId) REFERENCES log.JobRunEvent (JobRunEventId)`.
+
+One row per pipeline run: opened by `spLogPipelineRunEvent` (start) and closed by `spInsertPipelineRunEvent` (end/failure — `UPDATE`s that row by `PipelineRunEventId`).
+
+> **Fixed:** `spLogPipelineRunEvent` originally inserted its event row into `log.JobRunEvent` — a copy-paste leftover from `spLogJobRunEvent` that went unnoticed because no pipeline called this proc yet. Fixed to insert into `log.PipelineRunEvent`.
+
+### log.TaskRunEvent
+
+A run-event record for individual Task invocations — the task-level counterpart to `JobRunEvent`, added when the "Pipeline" naming was retired from these event tables (a `Task` in this framework is executed via a Fabric pipeline, `pl_Task_Executor`, but the tracking table is keyed to the Task, not to "a pipeline" as its own concept).
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| TaskRunEventId | BIGINT NOT NULL | **Primary key.** *(Renamed from the generic `RunLogId` every event table used to share.)* Also a foreign key to `log.RunLog` — equal to the `RunLogId` of the `RunLog` row `spLogTaskRunEvent` opened for this task run. |
+| JobRunEventId | BIGINT NULL | **Foreign key** to `log.JobRunEvent` — the Job run this task executed under, if any (run-hierarchy link; nullable since a task can run outside of any job-level invocation). |
+| JobName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Jobs` — which job this task belongs to. |
+| TaskName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Tasks` — which task this run event belongs to. |
+| LoggingLevel | TINYINT NOT NULL | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
+| Status | NVARCHAR(50) NULL | Outcome status of this task run. |
+| StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC) for the task run. |
+| EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the task run. |
+
+**Constraints:** `PRIMARY KEY CLUSTERED (TaskRunEventId)`; `FK_TaskRunEvent_JobName FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_TaskRunEvent_TaskName FOREIGN KEY (TaskName) REFERENCES orch.Tasks`; `FK_TaskRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_TaskRunEvent_RunLog FOREIGN KEY (TaskRunEventId) REFERENCES log.RunLog (RunLogId)`; `FK_TaskRunEvent_JobRunEvent FOREIGN KEY (JobRunEventId) REFERENCES log.JobRunEvent (JobRunEventId)`.
+
+One row per Task invocation: opened by `spLogTaskRunEvent` (start — creates the `RunLog` + `TaskRunEvent` rows together, called from `pl_Task_Executor`'s "Log Task Start") and closed by `spInsertTaskRunEvent` (end/failure — `UPDATE`s that row by `TaskRunEventId`, and adds a closing `log.RunLog` entry with `Status = 'Succeeded'`/`'Failed'`, which is what `orch.spGetNextWave`/`orch.spGetRunStatus` actually query to detect completion). `pl_Task_Executor` has both "Log Task Success" and a genuine "Log Task Failure" branch — previously there was no failure path at all here, so a failed task never wrote a `Failed` row to `log.RunLog`, and the orchestrator's `Until` loop would simply spin until its 12-hour timeout.
+
+> **Note:** `JobName`/`TaskName` here are validated against `orch.Jobs`/`orch.Tasks` rather than against `log.JobRunEvent`, since a foreign key needs a unique target and `JobRunEvent` has no unique key on `JobName` alone. The new `JobRunEventId` column (not `TaskRunEventId`'s equality with a `RunLogId` value) is what ties a `TaskRunEvent` row back to its parent `JobRunEvent` row via a real FK.
+
+### log.ActivityRunEvent
+
+Detailed, activity-level log capturing the full diagnostic detail of a single Fabric/Data Factory pipeline activity run (inputs, outputs, error detail, retry info) — a richer child record of one `log.RunLog` row, always logged from within `pl_Task_Executor` (i.e., in the context of one Task's execution). The one table in this schema whose own primary key is *not* a `RunLogId`-equal surrogate: `ActivityRunId` is a native Fabric/ADF-generated identifier, precisely so several activities can share one parent `RunLogId` (unlike `JobRunEvent`/`PipelineRunEvent`/`TaskRunEvent`, each of which owns its `RunLog` row outright). One row per activity attempt: opened by `spLogActivityRunEvent` (start — creates the `RunLog` + `ActivityRunEvent` rows together) and closed by `spInsertActivityRunEvent` (end/failure — `UPDATE`s that same row by `ActivityRunId`, not `RunLogId`, and adds a closing `log.RunLog` entry). `pl_Task_Executor` wraps each of the four real `TaskType` branches (`CopyJob`, `Notebook`, `StoredProcedure`, `Dataflow`) individually this way, on both the success and failure path.
+
+> **Fixed:** `spInsertActivityRunEvent` used to `INSERT` a second row reusing the same `RunLogId` the start call had already used — since nothing called it with a real `RunLogId` before, this hadn't surfaced yet, but it would have failed the moment anything did (no unique-per-call `RunLogId` was ever guaranteed). It's now an `UPDATE` keyed on `ActivityRunId`.
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| RunLogId | BIGINT NOT NULL | **Foreign key** to `log.RunLog` — the parent run-attempt this activity detail belongs to. Not unique per row (see above) — several activities under the same parent Task/Pipeline/Job run can share one value. |
+| JobRunEventId | BIGINT NULL | **Foreign key** to `log.JobRunEvent` — the Job run this activity executed under, if any (run-hierarchy link; nullable since an activity can run outside of any job-level invocation). |
 | LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
 | ActivityRunId | NVARCHAR(100) NOT NULL | **Primary key.** Native Fabric/ADF-generated identifier for this specific activity run. |
 | TaskName | NVARCHAR(200) NULL | *(Renamed from `PipelineName`.)* Name of the task this activity belongs to. |
@@ -180,56 +256,11 @@ Detailed, activity-level log capturing the full diagnostic detail of a single Fa
 | ExecutionDetailsJson | NVARCHAR(MAX) NULL | Full raw execution-detail JSON from the platform. |
 | ResourceId | NVARCHAR(1000) NULL | Azure resource ID of the pipeline/factory this activity ran under. |
 
-**Constraints:** `PRIMARY KEY CLUSTERED (ActivityRunId)`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FOREIGN KEY (RunLogId) REFERENCES log.RunLog`.
-
-### log.JobRunEvent
-
-A run-event record specifically for job-level invocations (as distinct from individual pipeline activities) — tracking a job instance's own lifecycle/status. A one-to-one child record of one `log.RunLog` row.
-
-| Column | Data Type | Purpose |
-|---|---|---|
-| RunLogId | BIGINT NOT NULL | **Primary key and foreign key** to `log.RunLog` — the parent run-attempt this job event belongs to (one-to-one, since it also serves as this table's own primary key). |
-| JobName | VARCHAR(200) NOT NULL | **New column. Foreign key** to `orch.Jobs` — which job this run event belongs to. |
-| LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
-| JobInstanceId | NVARCHAR(100) NULL | Identifier for this specific instance/execution of the job. |
-| ItemId | NVARCHAR(100) NULL | Identifier of the Fabric item that was invoked. |
-| JobType | NVARCHAR(50) NULL | Type/category of job. |
-| InvokeType | NVARCHAR(50) NULL | How the job was invoked (e.g., scheduled, manual, triggered). |
-| Status | NVARCHAR(50) NULL | Outcome status of this job run. |
-| RootActivityId | NVARCHAR(100) NULL | Identifier of the top-level activity that initiated this job. |
-| StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC) for the job run. |
-| EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the job run. |
-| FailureReason | NVARCHAR(MAX) NULL | Reason for failure, if any. |
-
-**Constraints:** `PRIMARY KEY CLUSTERED (RunLogId)`; `FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FOREIGN KEY (RunLogId) REFERENCES log.RunLog`.
-
-One row per Job run: opened by `spLogJobRunEvent` (start — creates the `RunLog` + `JobRunEvent` rows together, called from `pl_Orchestrator_Top_Level`'s "Log Job Start", now also passed the Job's own `LoggingLevel` via a new `orch.spGetJob` lookup) and closed by `spInsertJobRunEvent` (end/failure — `UPDATE`s that same row by `RunLogId`, and adds a closing `log.RunLog` entry). The orchestrator pipeline now has a genuine failure branch ("Log Job Failure", `dependencyConditions: ["Failed"]` on the task-processing loop) in addition to the success path, so a thrown exception or timeout no longer leaves the row stuck at `Status = 'Running'` forever.
-
-> **Fixed:** `spInsertJobRunEvent` used to `INSERT` a second row with the same `RunLogId` `spLogJobRunEvent` had already used for this table's primary key — an unconditional primary-key violation the moment "Log Job End" ran. It's now an `UPDATE` keyed on `RunLogId` (which also incidentally resolves the earlier `@JobName` gap, since the row's `JobName` is set once at start and never needs to be re-supplied at close).
-
-### log.TaskRunEvent
-
-A run-event record specifically for individual Task invocations — the task-level counterpart to `JobRunEvent`, added when the "Pipeline" naming was retired from these event tables (a `Task` in this framework is executed via a Fabric pipeline, `pl_Task_Executor`, but the tracking table is keyed to the Task, not to "a pipeline" as its own concept). A one-to-one child record of one `log.RunLog` row.
-
-| Column | Data Type | Purpose |
-|---|---|---|
-| RunLogId | BIGINT NOT NULL | **Primary key and foreign key** to `log.RunLog` — the parent run-attempt this task event belongs to (one-to-one, since it also serves as this table's own primary key). |
-| JobName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Jobs` — which job this task belongs to. |
-| TaskName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Tasks` — which task this run event belongs to. |
-| LoggingLevel | TINYINT NOT NULL | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
-| Status | NVARCHAR(50) NULL | Outcome status of this task run. |
-| StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC) for the task run. |
-| EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the task run. |
-
-**Constraints:** `PRIMARY KEY CLUSTERED (RunLogId)`; `FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FOREIGN KEY (TaskName) REFERENCES orch.Tasks`; `FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FOREIGN KEY (RunLogId) REFERENCES log.RunLog`.
-
-One row per Task invocation: opened by the new `spLogTaskRunEvent` (start — creates the `RunLog` + `TaskRunEvent` rows together, called from `pl_Task_Executor`'s "Log Task Start") and closed by the new `spInsertTaskRunEvent` (end/failure — `UPDATE`s that row by `RunLogId`, and adds a closing `log.RunLog` entry with `Status = 'Succeeded'`/`'Failed'`, which is what `orch.spGetNextWave`/`orch.spGetRunStatus` actually query to detect completion). `pl_Task_Executor` now has both "Log Task Success" and a genuine "Log Task Failure" branch — previously there was no failure path at all here, so a failed task never wrote a `Failed` row to `log.RunLog`, and the orchestrator's `Until` loop would simply spin until its 12-hour timeout.
-
-> **Note:** `JobName`/`TaskName` here are validated against `orch.Jobs`/`orch.Tasks` rather than against `log.JobRunEvent`, since a foreign key needs a unique target and `JobRunEvent` has no unique key on `JobName` alone. `RunLogId` is what actually ties a `TaskRunEvent` row back to its sibling `JobRunEvent` row — both point at the same `log.RunLog` row.
+**Constraints:** `PRIMARY KEY CLUSTERED (ActivityRunId)`; `FK_ActivityRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_ActivityRunEvent_RunLog FOREIGN KEY (RunLogId) REFERENCES log.RunLog`; `FK_ActivityRunEvent_JobRunEvent FOREIGN KEY (JobRunEventId) REFERENCES log.JobRunEvent (JobRunEventId)`.
 
 ### log.LoggingLevel
 
-Small lookup table enumerating valid logging verbosity levels, referenced by `orch.Jobs`, `orch.Tasks`, `log.ActivityRunEvent`, `log.JobRunEvent`, and `log.TaskRunEvent` to control how much detail gets logged.
+Small lookup table enumerating valid logging verbosity levels, referenced by `orch.Jobs`, `orch.Tasks`, `log.JobRunEvent`, `log.PipelineRunEvent`, `log.TaskRunEvent`, and `log.ActivityRunEvent` to control how much detail gets logged.
 
 | Column | Data Type | Purpose |
 |---|---|---|
@@ -247,10 +278,12 @@ Small lookup table enumerating valid logging verbosity levels, referenced by `or
 - `orch.Tasks` → `orch.ObjectIDs` (FK-enforced, two constraints: `JobName`-side and `ObjectName`-side). `orch.Jobs` also resolves its identity through this table via `nb_RefreshObjectIDs`, but that link is no longer FK-enforced (`FK_Jobs_ObjectIDs` dropped as unused).
 - `orch.JobDependencies` — edges between `orch.Jobs` rows, each gated on an `orch.DependencyCondition`
 - `orch.TaskDependencies` — edges between `orch.Tasks` rows, each gated on an `orch.DependencyCondition`
-- `orch.Jobs`/`orch.Tasks`/`log.ActivityRunEvent`/`log.JobRunEvent`/`log.TaskRunEvent` → `log.LoggingLevel` (shared verbosity control)
+- `orch.Jobs`/`orch.Tasks`/`log.JobRunEvent`/`log.PipelineRunEvent`/`log.TaskRunEvent`/`log.ActivityRunEvent` → `log.LoggingLevel` (shared verbosity control)
 - `log.JobRunEvent` → `orch.Jobs` (`JobName` foreign key)
 - `log.TaskRunEvent` → `orch.Jobs` (`JobName`) and `orch.Tasks` (`TaskName`)
-- `log.RunLog` 1—* `log.ActivityRunEvent`, `log.RunLog` 1—1 `log.JobRunEvent`, `log.RunLog` 1—1 `log.TaskRunEvent` (all are detail children of a run-history row)
+- `log.PipelineRunEvent` has no direct FK to `orch.Jobs`/`orch.Tasks`; it identifies the Fabric pipeline via `ItemId` and, when invoked as part of a Job run, links back to that Job only indirectly through `JobRunEventId`
+- `log.RunLog` 1—1 `log.JobRunEvent`, `log.RunLog` 1—1 `log.PipelineRunEvent`, `log.RunLog` 1—1 `log.TaskRunEvent`, `log.RunLog` 1—* `log.ActivityRunEvent` (all are detail children of a run-history row; see the schema note above on why the first three are 1—1 on their own PK while `ActivityRunEvent` can share a `RunLogId`)
+- Run hierarchy via `JobRunEventId`: `log.JobRunEvent` 1—{0,1} `log.PipelineRunEvent`, `log.JobRunEvent` 1—* `log.TaskRunEvent`, `log.JobRunEvent` 1—* `log.ActivityRunEvent` (every descendant event of a Job run can be found by its `JobRunEventId`, regardless of how many Pipeline/Task/Activity runs occurred underneath)
 
 ## Verifying against the live database
 
