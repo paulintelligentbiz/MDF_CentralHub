@@ -231,7 +231,7 @@ TABLE_SPECS = [
         "sheet": "Tasks", "schema": "orch", "table": "Tasks",
         "pk": ["TaskName"],
         "columns": ["TaskName", "Include", "JobName", "ObjectName", "WorkspaceName",
-                    "TimeoutInSeconds", "Retries", "RetryIntervalInSeconds",
+                    "TimeoutInSeconds", "Retries", "RetryIntervalInSeconds", "UpdateOption",
                     "ParametersJson", "Dependencies", "TaskType", "System", "Layer",
                     "LoggingLevel"],
         "bit_columns": ["Include"],

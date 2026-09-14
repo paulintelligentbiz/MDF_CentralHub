@@ -7,6 +7,7 @@ CREATE TABLE [orch].[Tasks] (
     [TimeoutInSeconds]       INT            NOT NULL,
     [Retries]                INT            NOT NULL,
     [RetryIntervalInSeconds] INT            NOT NULL,
+    [UpdateOption]           VARCHAR (9)    CONSTRAINT [DF_Tasks_UpdateOption] DEFAULT ('Append') NOT NULL,
     [ParametersJson]         NVARCHAR (MAX) NULL,
     [Dependencies]           NVARCHAR (MAX) NULL,
     [TaskType]               VARCHAR (50)   NOT NULL,
@@ -18,7 +19,8 @@ CREATE TABLE [orch].[Tasks] (
     CONSTRAINT [FK_Tasks_LoggingLevel] FOREIGN KEY ([LoggingLevel]) REFERENCES [log].[LoggingLevel] ([LoggingLevel]),
     CONSTRAINT [FK_Tasks_ObjectIDs_Job] FOREIGN KEY ([WorkspaceName], [JobName]) REFERENCES [orch].[ObjectIDs] ([WorkspaceName], [ObjectName]),
     CONSTRAINT [FK_Tasks_ObjectIDs_Object] FOREIGN KEY ([WorkspaceName], [ObjectName]) REFERENCES [orch].[ObjectIDs] ([WorkspaceName], [ObjectName]),
-    CONSTRAINT [FK_Tasks_TaskType] FOREIGN KEY ([TaskType]) REFERENCES [orch].[TaskType] ([TaskType])
+    CONSTRAINT [FK_Tasks_TaskType] FOREIGN KEY ([TaskType]) REFERENCES [orch].[TaskType] ([TaskType]),
+    CONSTRAINT [CK_Tasks_UpdateOption] CHECK ([UpdateOption] IN ('Append', 'Overwrite'))
 );
 
 

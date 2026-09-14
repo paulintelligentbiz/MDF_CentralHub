@@ -15,8 +15,19 @@ erDiagram
         varchar JobName FK
         varchar ObjectName FK
         varchar WorkspaceName FK
+        varchar UpdateOption
         varchar TaskType FK
         tinyint LoggingLevel FK
+    }
+    TaskWatermark {
+        varchar TaskName PK,FK
+        varchar WatermarkColumn
+        varchar WatermarkDataType
+        datetime2 WatermarkDateTimeValue
+        decimal WatermarkNumericValue
+        datetime2 PreviousWatermarkDateTimeValue
+        decimal PreviousWatermarkNumericValue
+        datetime2 ModifiedUtc
     }
     TaskType {
         varchar TaskType PK
@@ -86,6 +97,7 @@ erDiagram
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Job (WorkspaceName, JobName)"
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"
+    Tasks ||--o| TaskWatermark : "one row per watermark-tracked Task"
 
     Jobs ||--o{ JobDependencies : "JobName"
     JobDependencies }o--|| DependencyCondition : "DependsOn"

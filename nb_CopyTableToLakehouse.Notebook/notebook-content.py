@@ -63,6 +63,13 @@
 #     ISO-8601 string for a DateTime watermark, a plain number for a Numeric one
 #     (matching orch.WatermarkDataType). Typically supplied by pl_Task_Executor
 #     from orch.TaskWatermark, not hardcoded here.
+#
+# Optional write-mode key:
+#   "updateOption": "Append" (default) or "Overwrite" -- matches orch.Tasks.UpdateOption,
+#     merged into ParametersJson by orch.spGetTaskParametersJson. "Overwrite" forces a full
+#     truncate+reload of the destination even for an otherwise-watermarked Task (the
+#     incremental filter below is skipped for this run), and re-baselines the watermark from
+#     the full reload instead of advancing it incrementally -- see the exit-payload cell below.
 ParametersJson = (
     '{"sourceSchema": "dbo", "sourceTable": "REPLACE_ME", '
     '"destWorkspaceId": "947d3136-33ac-458a-be73-ac7dc38afaa5", '
@@ -95,11 +102,22 @@ DEST_TABLE = params.get("destTable", SOURCE_TABLE)
 # views"). "dbo" is the default schema unless ParametersJson says otherwise.
 DEST_SCHEMA = params.get("destSchema", "dbo")
 
-# Both present -> incremental load, filtered on this column/value and appended
-# rather than overwritten. Either one missing -> full load, exactly as before.
+# "Append" (default) is today's existing behavior -- untouched. "Overwrite" forces a full
+# truncate+reload of the destination regardless of any configured watermark: the source read
+# below skips its incremental filter even if a watermarkValue is present, and the write always
+# replaces the table's contents outright. Matches orch.Tasks.UpdateOption, merged into
+# ParametersJson by orch.spGetTaskParametersJson.
+UPDATE_OPTION = params.get("updateOption", "Append")
+if UPDATE_OPTION not in ("Append", "Overwrite"):
+    raise ValueError(f"Unrecognized updateOption {UPDATE_OPTION!r} -- expected 'Append' or 'Overwrite'")
+FORCE_OVERWRITE = UPDATE_OPTION == "Overwrite"
+
+# Both present (and not FORCE_OVERWRITE) -> incremental load, filtered on this column/value and
+# appended rather than overwritten. Either one missing, or FORCE_OVERWRITE -> full load --
+# Overwrite forces this even for an otherwise-watermarked Task.
 WATERMARK_COLUMN = params.get("watermarkColumn")
 WATERMARK_VALUE = params.get("watermarkValue")
-INCREMENTAL = WATERMARK_COLUMN is not None and WATERMARK_VALUE is not None
+INCREMENTAL = (not FORCE_OVERWRITE) and WATERMARK_COLUMN is not None and WATERMARK_VALUE is not None
 
 # "source connection" (ContosoDW-DEV) -- see /topics/database-connections.md
 SOURCE_SERVER = "paulsdemos.database.windows.net"
@@ -109,6 +127,9 @@ ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 if INCREMENTAL:
     print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE} "
           f"(incremental: {WATERMARK_COLUMN} > {WATERMARK_VALUE!r})")
+elif FORCE_OVERWRITE:
+    print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE} "
+          f"(forced full reload: UpdateOption=Overwrite)")
 else:
     print(f"Copying {SOURCE_SCHEMA}.{SOURCE_TABLE} -> {DEST_LAKEHOUSE_ID}/Tables/{DEST_SCHEMA}/{DEST_TABLE} (full load)")
 
@@ -200,8 +221,9 @@ print(f"Read {len(df)} rows, {len(df.columns)} columns from {SOURCE_SCHEMA}.{SOU
 
 # CELL ********************
 
-# Full overwrite for a full load; append for an incremental one (the rows read
-# above are already filtered to just the new/changed ones in that case, so
+# Full overwrite for a full load (including a Task forced into one via
+# UpdateOption=Overwrite); append for an incremental one (the rows read above
+# are already filtered to just the new/changed ones in that case, so
 # overwriting would discard everything already landed). A future upsert
 # version could MERGE on write instead, driven by extra ParametersJson fields,
 # for sources where the same key can reappear with an updated watermark value.
@@ -231,19 +253,21 @@ print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows, mode={WRITE_
 
 # CELL ********************
 
-# Hand the new high-water value back to the caller. This notebook only computes
-# it -- it has no connection to db_Metadata and doesn't write orch.TaskWatermark
-# itself (that stays owned by pipeline activities, same as every other
-# orch.*/log.* read or write in this framework). Advancing the stored watermark
-# from this exit value, and only after the Task's overall run is confirmed
-# successful (see the Previous*/current split on orch.TaskWatermark), is
-# follow-up pipeline work, not implemented yet.
+# Hand the new high-water value back to the caller whenever this Task is watermark-tracked
+# (WATERMARK_COLUMN present) -- both on a normal incremental run and on a run forced full by
+# UpdateOption=Overwrite, since either way the destination now reflects a known point-in-time
+# state that a later run needs to resume from correctly. This notebook only computes the value
+# -- it has no connection to db_Metadata and doesn't write orch.TaskWatermark itself (that
+# stays owned by pipeline activities, same as every other orch.*/log.* read or write in this
+# framework). pl_Task_Executor's "Advance Task Watermark" activity calls
+# orch.spAdvanceTaskWatermark with this exit payload right after "Run Notebook" succeeds, so the
+# stored watermark only moves once the Task's overall run is confirmed successful.
 try:
     import notebookutils
 except ImportError:
     notebookutils = None  # allows py_compile / unit tests outside a Fabric runtime
 
-if INCREMENTAL:
+if WATERMARK_COLUMN is not None:
     if len(df) > 0:
         new_watermark_value = df[WATERMARK_COLUMN].max()
         # pandas/numpy scalars (Timestamp, int64, ...) aren't JSON-serializable
@@ -261,6 +285,11 @@ if INCREMENTAL:
         "watermarkColumn": WATERMARK_COLUMN,
         "previousWatermarkValue": WATERMARK_VALUE,
         "newWatermarkValue": new_watermark_value,
+        # True when this run was a forced full reload (UpdateOption=Overwrite): tells
+        # orch.spAdvanceTaskWatermark to re-baseline the current value from scratch and clear
+        # Previous* (it no longer corresponds to anything recoverable) instead of shifting
+        # current -> Previous the way a normal incremental advance does.
+        "resetWatermark": FORCE_OVERWRITE,
     })
     if notebookutils is not None:
         notebookutils.notebook.exit(exit_payload)
@@ -294,10 +323,16 @@ if INCREMENTAL:
 #   correct `Tables/dbo/<name>` path won't clean up the old orphaned one.
 # - Incremental loads: pass `watermarkColumn`/`watermarkValue` in `ParametersJson` and this
 #   notebook filters the read, appends instead of overwriting, and exits with the new
-#   high-water value as JSON. `orch.TaskWatermark` (with its `Previous*` columns) is where
-#   that value should land, but nothing yet calls a proc to actually store it there --
-#   `pl_Task_Executor` needs a step added that reads this notebook's exit value and
-#   advances `orch.TaskWatermark` only after the Task's overall run succeeds.
+#   high-water value as JSON. `pl_Task_Executor`'s `Advance Task Watermark` activity reads that
+#   exit value and calls `orch.spAdvanceTaskWatermark` right after `Run Notebook` succeeds, so
+#   `orch.TaskWatermark` (with its `Previous*` columns) only advances once the Task's overall
+#   run is confirmed successful.
+# - Forced full reload: set `orch.Tasks.UpdateOption = 'Overwrite'` (merged into `ParametersJson`
+#   as `updateOption` by `orch.spGetTaskParametersJson`) to make this notebook ignore any stored
+#   watermark value, read the source table in full, and truncate+reload the destination -- even
+#   for a Task that's otherwise watermark-tracked. `orch.spAdvanceTaskWatermark` re-baselines the
+#   watermark from that full reload (via the exit payload's `resetWatermark` flag) instead of
+#   advancing it incrementally, so a later run switched back to `Append` resumes correctly.
 # - Upsert follow-up: `MERGE` on write, for sources where a previously-seen key can
 #   reappear with a newer watermark value instead of always being a new row.
 

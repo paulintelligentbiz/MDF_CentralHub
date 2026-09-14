@@ -5,10 +5,16 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Merges in watermarkColumn/watermarkValue from orch.TaskWatermark when this Task has a
-    -- row there; a Task with no TaskWatermark row is a full load, so @ParametersJson comes
-    -- back unchanged -- the caller (pl_Task_Executor) doesn't need to know which case it is.
+    -- Merges in updateOption (orch.Tasks.UpdateOption -- always present, so this always runs)
+    -- and, when this Task has a row there, watermarkColumn/watermarkValue from
+    -- orch.TaskWatermark; a Task with no TaskWatermark row is a full load, so those two keys
+    -- are left out and @ParametersJson otherwise comes back unchanged -- the caller
+    -- (pl_Task_Executor) doesn't need to know which case it is.
     DECLARE @Result nvarchar(max) = @ParametersJson;
+
+    SELECT @Result = JSON_MODIFY(@Result, '$.updateOption', t.UpdateOption)
+    FROM orch.Tasks t
+    WHERE t.TaskName = @TaskName;
 
     SELECT
         @Result = JSON_MODIFY(

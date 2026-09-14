@@ -50,6 +50,7 @@ One row per individual unit of work (a Task) belonging to a Job — e.g., a sing
 | TimeoutInSeconds | INT NOT NULL | Maximum time, in seconds, this individual task may run. |
 | Retries | INT NOT NULL | Retry count on failure for this task. |
 | RetryIntervalInSeconds | INT NOT NULL | Wait time, in seconds, between retries. |
+| UpdateOption | VARCHAR(9) NOT NULL (default 'Append') | `'Append'` or `'Overwrite'` (enforced by `CK_Tasks_UpdateOption`) — merged into `ParametersJson` as `updateOption` by `orch.spGetTaskParametersJson` and read by `nb_CopyTableToLakehouse`. `'Append'` is today's existing behavior (unchanged); `'Overwrite'` forces the notebook to ignore any stored watermark value, read the source table in full, and truncate+reload the destination even for an otherwise watermark-tracked Task, re-baselining `orch.TaskWatermark` from that full reload instead of advancing it incrementally (see `orch.spAdvanceTaskWatermark`'s `resetWatermark` handling below). |
 | ParametersJson | NVARCHAR(MAX) NULL | JSON blob of per-task parameters (e.g., source schema/table, destination workspace/lakehouse) passed into the invoked object at runtime — this is what makes each task's source and destination fully data-driven rather than tied to any notebook-level configuration. |
 | Dependencies | NVARCHAR(MAX) NULL | JSON array of `TaskName` values that must have already succeeded before this task is eligible to run; consumed by `spGetNextWave` to compute the next wave of ready tasks. (See also `orch.TaskDependencies`, below, for the newer relational form of task-to-task precedence.) |
 | TaskType | VARCHAR(50) NOT NULL | **Foreign key** to `orch.TaskType` — the kind of object being invoked (e.g., `Notebook`), which also determines whether tasks of this type may run in parallel. *(Changed from `NVARCHAR(50)` to `VARCHAR(50)` to match `orch.TaskType.TaskType`.)* |
@@ -60,6 +61,27 @@ One row per individual unit of work (a Task) belonging to a Job — e.g., a sing
 **Constraints:** `PRIMARY KEY CLUSTERED (TaskName)`; `FK_Tasks_Job FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_Tasks_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_Tasks_TaskType FOREIGN KEY (TaskType) REFERENCES orch.TaskType`; `FK_Tasks_ObjectIDs_Job FOREIGN KEY (WorkspaceName, JobName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`; `FK_Tasks_ObjectIDs_Object FOREIGN KEY (WorkspaceName, ObjectName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`. (A duplicate of the last constraint, previously tracked under the stray name `FK_Tasks_ObjectIDs_ObjectName`, has been removed.)
 
 `orch.spGetNextWave` already selects each ready task's `LoggingLevel` into `TasksJson`; the two Wave Runner pipelines now forward `item().LoggingLevel` into `pl_Task_Executor` as a pipeline parameter, which passes it into every `log.spLogTaskRunEvent`/`log.spLogActivityRunEvent` call for that task.
+
+### orch.TaskWatermark
+
+Runtime incremental-load state for watermark-driven Tasks — deliberately *not* hand-authored metadata (see the note at the top of this section), so it has no sheet in `orch_metadata.xlsx` and isn't touched by `nb_db_Metadata_and_Excel`. One row per watermark-tracked Task; a Task with no row here is always a full load.
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| TaskName | VARCHAR(200) NOT NULL | **Primary key.** The watermark-tracked Task this row belongs to. |
+| WatermarkColumn | VARCHAR(200) NOT NULL | Name of the source column to filter/track on — merged into that Task's `ParametersJson` as `watermarkColumn` by `orch.spGetTaskParametersJson`. |
+| WatermarkDataType | VARCHAR(20) NOT NULL | `'DateTime'` or `'Numeric'` (enforced by `CK_TaskWatermark_WatermarkDataType`) — which of the two value columns below is authoritative. |
+| WatermarkDateTimeValue | DATETIME2(7) NULL | Current high-water value, when `WatermarkDataType = 'DateTime'`. |
+| WatermarkNumericValue | DECIMAL(38,0) NULL | Current high-water value, when `WatermarkDataType = 'Numeric'`. |
+| PreviousWatermarkDateTimeValue | DATETIME2(7) NULL | The prior high-water value, kept so a run can be rolled back — see `orch.spAdvanceTaskWatermark` below. |
+| PreviousWatermarkNumericValue | DECIMAL(38,0) NULL | Numeric counterpart to `PreviousWatermarkDateTimeValue`. |
+| ModifiedUtc | DATETIME2(7) NOT NULL (default `SYSUTCDATETIME()`) | When this row was last advanced or reset. |
+
+**Constraints:** `PRIMARY KEY CLUSTERED (TaskName)`; `FK_TaskWatermark_Task FOREIGN KEY (TaskName) REFERENCES orch.Tasks`; `CK_TaskWatermark_WatermarkDataType CHECK (WatermarkDataType IN ('DateTime', 'Numeric'))`.
+
+`orch.spGetTaskParametersJson` merges `watermarkColumn`/`watermarkValue` into a Task's `ParametersJson` whenever a row exists here, which is what makes `nb_CopyTableToLakehouse` treat that run as incremental. After `nb_CopyTableToLakehouse` runs, `pl_Task_Executor`'s "Advance Task Watermark" activity calls `orch.spAdvanceTaskWatermark` with the notebook's exit payload — but only once "Run Notebook" has succeeded, so a failed run never advances the watermark. That proc behaves two ways depending on the payload's `resetWatermark` flag:
+- **Normal (incremental) run** (`resetWatermark` false/absent): shifts current → `Previous*` before overwriting current with the new high-water value, so the prior mark is always recoverable.
+- **Reset run** (`resetWatermark` true — set when the Task's `UpdateOption = 'Overwrite'` forced a full truncate+reload): `Previous*` is cleared to `NULL` instead of being shifted forward, since the destination was just wiped and reloaded and the old value no longer corresponds to anything recoverable; current is re-baselined to the high-water value computed from that full reload, so a later run switched back to `Append`/incremental resumes from the correct point.
 
 ### orch.TaskType
 
