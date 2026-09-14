@@ -11,22 +11,18 @@
 # MARKDOWN ********************
 
 # # nb_Reset_ParallelBatchLimit
-#
-# Sets the `batchCount` on `pl_Task_Wave_Runner_Parallel`'s `ForEach Task Parallel`
+# # Sets the `batchCount` on `pl_Task_Wave_Runner_Parallel`'s `ForEach Task Parallel`
 # activity to whatever `ParallelBatchLimit` is passed in, by patching that
 # pipeline's item definition through the Fabric REST API.
-#
-# This exists because a ForEach activity's `batchCount` has no dynamic-content /
+# # This exists because a ForEach activity's `batchCount` has no dynamic-content /
 # expression support in the pipeline authoring model (unlike `Items`) -- so a
 # per-job batch limit can only be applied by rewriting the pipeline's saved
 # definition before each run, not by parameterizing the activity itself.
-#
-# Meant to be invoked as an activity in `pl_Orchestrator_Top_Level` (see the
+# # Meant to be invoked as an activity in `pl_Orchestrator_Top_Level` (see the
 # pipeline change alongside this notebook), right after `Get Job Info`, with
 # `ParallelBatchLimit` coming from that job's `orch.Jobs.ParallelBatchLimit`
 # column.
-#
-# **Setup:**
+# # **Setup:**
 # 1. `%pip install requests` if it isn't already on the environment.
 # 2. No interactive sign-in needed -- this uses `notebookutils.credentials.getToken('pbi')`
 #    to get a token for the Fabric REST API, so it's safe to run unattended from
@@ -34,8 +30,7 @@
 # 3. The calling identity (you, or the pipeline's run-as identity) needs at
 #    least Contributor on this workspace (Get Item Definition / Update Item
 #    Definition both require read+write on the target item).
-#
-# **Git-connected workspace note:** this notebook writes directly to
+# # **Git-connected workspace note:** this notebook writes directly to
 # `pl_Task_Wave_Runner_Parallel`'s live item definition, bypassing Git. That
 # shows up as an uncommitted change against the connected branch, and gets
 # silently reverted the next time someone does *Update from Git* without
@@ -270,8 +265,7 @@ reset_parallel_batch_limit(
 # MARKDOWN ********************
 
 # ## Deployment
-#
-# 1. Import this notebook into the workspace (**New item -> Import notebook**),
+# # 1. Import this notebook into the workspace (**New item -> Import notebook**),
 #    or let it arrive via the Git sync that carries this file in.
 # 2. Grab its notebook ID (from the URL, or the Fabric REST API) and put it in
 #    the `Reset Parallel Batch Limit` activity added to `pl_Orchestrator_Top_Level`
