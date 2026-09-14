@@ -66,6 +66,59 @@
         "dependsOn": []
       },
       {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "e19e60e3-b1be-40b7-9f90-6bf62cf8087d",
+          "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+          "parameters": {}
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Refresh Object IDs",
+        "dependsOn": [
+          {
+            "activity": "Get Job Info",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "PLACEHOLDER-REPLACE-WITH-nb_Reset_ParallelBatchLimit-OBJECT-ID",
+          "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+          "parameters": {
+            "ParallelBatchLimit": {
+              "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
+              "type": "int"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Reset Parallel Batch Limit",
+        "dependsOn": [
+          {
+            "activity": "Get Job Info",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
         "type": "SetVariable",
         "typeProperties": {
           "variableName": "JobLoggingLevel",
@@ -81,7 +134,13 @@
         "name": "Set Job LoggingLevel",
         "dependsOn": [
           {
-            "activity": "Get Job Info",
+            "activity": "Refresh Object IDs",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "Reset Parallel Batch Limit",
             "dependencyConditions": [
               "Succeeded"
             ]
