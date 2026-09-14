@@ -68,6 +68,7 @@ except ImportError:
     _nb_credentials = None  # allows py_compile / unit tests outside a Fabric runtime
 
 FABRIC_API_BASE = "https://api.fabric.microsoft.com/v1"
+_REQUEST_TIMEOUT_SECONDS = 30  # fail fast rather than hang indefinitely -- requests has no default timeout
 _token_cache = {}
 
 def _get_pbi_token():
@@ -85,13 +86,23 @@ def _fabric_get(path, params=None):
     url = f"{FABRIC_API_BASE}{path}"
     items = []
     while url:
-        resp = requests.get(url, headers=headers, params=params)
+        resp = requests.get(url, headers=headers, params=params, timeout=_REQUEST_TIMEOUT_SECONDS)
         resp.raise_for_status()
         payload = resp.json()
         items.extend(payload.get("value", []))
         url = payload.get("continuationUri")
         params = None  # continuationUri already carries the query string
     return items
+
+def _fabric_get_one(path):
+    """GET a single (non-paginated) Fabric REST API resource, e.g. one workspace
+    by ID -- much cheaper than _fabric_get's tenant-wide list-and-filter when
+    the caller already knows exactly which resource it wants."""
+    token = _get_pbi_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = requests.get(f"{FABRIC_API_BASE}{path}", headers=headers, timeout=_REQUEST_TIMEOUT_SECONDS)
+    resp.raise_for_status()
+    return resp.json()
 
 
 # METADATA ********************
@@ -112,11 +123,28 @@ VALID_ITEM_TYPES = {
 }
 
 def get_workspace_id(workspace_name, current_workspace_id=None):
-    """Resolve a workspace's GUID from its display name. Workspace names aren't
-    guaranteed unique tenant-wide: if more than one matches, prefers
-    `current_workspace_id` (this notebook's own workspace) when it's among the
-    matches, else returns the first match and prints a warning listing all of
-    them so the caller can disambiguate."""
+    """Resolve a workspace's GUID from its display name.
+
+    Checks the notebook's own workspace (`current_workspace_id`) first, with a
+    single cheap GET on that one workspace -- every object this framework
+    currently resolves lives in the workspace the pipeline itself runs in, so
+    this fast path is normally the only Fabric API call this function makes at
+    all. Only when the name doesn't match the current workspace (or none was
+    given) does it fall back to listing every workspace the caller can see and
+    filtering by display name -- a tenant-wide scan that gets slower with every
+    workspace in the tenant, and was previously the *only* path this function
+    had, which is why a refresh could take minutes even though everything it
+    was ever looking for was in the workspace it was already running in.
+
+    Workspace names aren't guaranteed unique tenant-wide: in that slow-path
+    fallback, if more than one matches, prefers `current_workspace_id` when
+    it's among the matches, else returns the first match and prints a warning
+    listing all of them so the caller can disambiguate."""
+    if current_workspace_id:
+        current = _fabric_get_one(f"/workspaces/{current_workspace_id}")
+        if current.get("displayName") == workspace_name:
+            return current_workspace_id
+
     matches = [w for w in _fabric_get("/workspaces") if w.get("displayName") == workspace_name]
     if not matches:
         return None
@@ -258,11 +286,24 @@ def upsert_object_id(conn, workspace_name, object_name, object_id, workspace_id)
 def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
     """Resolve every (WorkspaceName, ObjectName) referenced by orch.Tasks/orch.Jobs
     and upsert the result into orch.ObjectIDs. Returns a summary dict; prints
-    anything that couldn't be resolved instead of silently skipping it."""
+    anything that couldn't be resolved instead of silently skipping it.
+
+    Whatever DOES resolve is committed regardless -- a name that can't be found
+    doesn't hold back everything else that could. But if anything is left
+    unresolved, this raises RuntimeError right after that commit, so a
+    NOT FOUND is no longer just a printed line the caller can miss: it fails
+    this notebook's cell, which fails the pipeline activity that invoked it
+    (pl_Orchestrator_Top_Level's "Refresh Object IDs"), instead of leaving the
+    run looking green while orch.ObjectIDs is still silently stale. An
+    unresolved reference almost always means orch.Tasks/orch.Jobs names a
+    WorkspaceName/ObjectName that doesn't match anything actually deployed --
+    that's a metadata bug worth stopping the run over, not a transient
+    condition worth retrying past."""
     conn = connect_to_db_metadata()
     try:
         refs = discover_object_refs(conn, only_workspace_name=only_workspace_name)
-        resolved = not_found = 0
+        resolved = 0
+        not_found = []
         ws_id_cache = {}
         for workspace_name, object_name, item_type in refs:
             if workspace_name not in ws_id_cache:
@@ -272,25 +313,33 @@ def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
             ws_id = ws_id_cache[workspace_name]
             if ws_id is None:
                 print(f"NOT FOUND: workspace {workspace_name!r}")
-                not_found += 1
+                not_found.append((workspace_name, object_name))
                 continue
             obj_id = get_item_id(ws_id, object_name, item_type=item_type)
             if obj_id is None:
                 print(f"NOT FOUND: {workspace_name!r} / {object_name!r} (type={item_type!r})")
-                not_found += 1
+                not_found.append((workspace_name, object_name))
                 continue
             action = upsert_object_id(conn, workspace_name, object_name, obj_id, ws_id)
             resolved += 1
             print(f"{action}: {workspace_name}/{object_name} -> {obj_id}")
         conn.commit()
-        summary = {"resolved": resolved, "not_found": not_found, "total": len(refs)}
-        print(summary)
-        return summary
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
+
+    summary = {"resolved": resolved, "not_found": not_found, "total": len(refs)}
+    print(summary)
+    if not_found:
+        raise RuntimeError(
+            f"{len(not_found)} of {len(refs)} object reference(s) could not be resolved in "
+            f"Fabric and are left at their previous ObjectID: {not_found}. orch.Tasks/orch.Jobs "
+            "likely names a WorkspaceName/ObjectName that doesn't match anything actually "
+            "deployed -- fix the metadata (or deploy the missing item) and re-run."
+        )
+    return summary
 
 
 # METADATA ********************

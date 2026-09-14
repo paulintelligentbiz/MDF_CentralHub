@@ -4,6 +4,7 @@ CREATE TABLE [orch].[Jobs] (
     [TimeoutInSeconds]       INT            NOT NULL,
     [Retries]                INT            NOT NULL,
     [RetryIntervalInSeconds] INT            NOT NULL,
+    [UpdateObjectIDs]        BIT            CONSTRAINT [DF_Jobs_UpdateObjectIDs] DEFAULT ((1)) NOT NULL,
     [UpdateParallelBatchLimit] BIT          CONSTRAINT [DF_Jobs_UpdateParallelBatchLimit] DEFAULT ((0)) NOT NULL,
     [ParallelBatchLimit]     INT            CONSTRAINT [DF_Jobs_ParallelBatchLimit] DEFAULT ((4)) NOT NULL,
     [ScheduledStartUTC]      TIME (0)       NULL,

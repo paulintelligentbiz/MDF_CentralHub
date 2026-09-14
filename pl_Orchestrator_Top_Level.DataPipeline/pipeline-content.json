@@ -66,20 +66,34 @@
         "dependsOn": []
       },
       {
-        "type": "TridentNotebook",
+        "type": "IfCondition",
         "typeProperties": {
-          "notebookId": "2cf8087d-6bf6-9f90-40b7-b1bee19e60e3",
-          "workspaceId": "00000000-0000-0000-0000-000000000000",
-          "parameters": {}
+          "expression": {
+            "value": "@equals(activity('Get Job Info').output.firstRow.UpdateObjectIDs, true)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "type": "TridentNotebook",
+              "typeProperties": {
+                "notebookId": "2cf8087d-6bf6-9f90-40b7-b1bee19e60e3",
+                "workspaceId": "00000000-0000-0000-0000-000000000000",
+                "parameters": {}
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "Refresh Object IDs",
+              "dependsOn": []
+            }
+          ],
+          "ifFalseActivities": []
         },
-        "policy": {
-          "timeout": "0.12:00:00",
-          "retry": 0,
-          "retryIntervalInSeconds": 30,
-          "secureInput": false,
-          "secureOutput": false
-        },
-        "name": "Refresh Object IDs",
+        "name": "Check Update Object IDs",
         "dependsOn": [
           {
             "activity": "Get Job Info",
@@ -148,7 +162,7 @@
         "name": "Set Job LoggingLevel",
         "dependsOn": [
           {
-            "activity": "Refresh Object IDs",
+            "activity": "Check Update Object IDs",
             "dependencyConditions": [
               "Succeeded"
             ]

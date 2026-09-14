@@ -221,10 +221,10 @@ TABLE_SPECS = [
         "sheet": "Jobs", "schema": "orch", "table": "Jobs",
         "pk": ["JobName"],
         "columns": ["JobName", "Include", "TimeoutInSeconds", "Retries",
-                    "RetryIntervalInSeconds", "UpdateParallelBatchLimit", "ParallelBatchLimit",
-                    "ScheduledStartUTC", "ParametersJson", "Dependencies", "WorkspaceName",
-                    "Environment", "LoggingLevel"],
-        "bit_columns": ["Include", "UpdateParallelBatchLimit"],
+                    "RetryIntervalInSeconds", "UpdateObjectIDs", "UpdateParallelBatchLimit",
+                    "ParallelBatchLimit", "ScheduledStartUTC", "ParametersJson", "Dependencies",
+                    "WorkspaceName", "Environment", "LoggingLevel"],
+        "bit_columns": ["Include", "UpdateObjectIDs", "UpdateParallelBatchLimit"],
         "time_columns": ["ScheduledStartUTC"],
     },
     {
@@ -587,7 +587,9 @@ def CompareSQLAndExcel(workbook_path=WORKBOOK_PATH, conn=None):
 
 # CELL ********************
 
-CompareSQLAndExcel()
+# CompareSQLAndExcel()
+# SyncSQLToExcel()
+SyncExcelToSQL(confirm=True)
 
 
 # METADATA ********************
