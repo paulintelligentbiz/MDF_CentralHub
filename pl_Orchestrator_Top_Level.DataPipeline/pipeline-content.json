@@ -90,25 +90,39 @@
         ]
       },
       {
-        "type": "TridentNotebook",
+        "type": "IfCondition",
         "typeProperties": {
-          "notebookId": "PLACEHOLDER-REPLACE-WITH-nb_Reset_ParallelBatchLimit-OBJECT-ID",
-          "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
-          "parameters": {
-            "ParallelBatchLimit": {
-              "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
-              "type": "int"
+          "expression": {
+            "value": "@equals(activity('Get Job Info').output.firstRow.UpdateParallelBatchLimit, true)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "type": "TridentNotebook",
+              "typeProperties": {
+                "notebookId": "PLACEHOLDER-REPLACE-WITH-nb_Reset_ParallelBatchLimit-OBJECT-ID",
+                "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                "parameters": {
+                  "ParallelBatchLimit": {
+                    "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
+                    "type": "int"
+                  }
+                }
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "Reset Parallel Batch Limit",
+              "dependsOn": []
             }
-          }
+          ],
+          "ifFalseActivities": []
         },
-        "policy": {
-          "timeout": "0.12:00:00",
-          "retry": 0,
-          "retryIntervalInSeconds": 30,
-          "secureInput": false,
-          "secureOutput": false
-        },
-        "name": "Reset Parallel Batch Limit",
+        "name": "Check Update Parallel Batch Limit",
         "dependsOn": [
           {
             "activity": "Get Job Info",
@@ -140,7 +154,7 @@
             ]
           },
           {
-            "activity": "Reset Parallel Batch Limit",
+            "activity": "Check Update Parallel Batch Limit",
             "dependencyConditions": [
               "Succeeded"
             ]

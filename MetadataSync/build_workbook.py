@@ -33,6 +33,7 @@ COLUMNS = {
         ("TimeoutInSeconds",       "INT",           False, None, None),
         ("Retries",                "INT",           False, None, None),
         ("RetryIntervalInSeconds", "INT",           False, None, None),
+        ("UpdateParallelBatchLimit", "BIT",         False, "0",  None),
         ("ParallelBatchLimit",     "INT",           False, "4",  None),
         ("ScheduledStartUTC",      "TIME(0)",       True,  None, None),
         ("ParametersJson",         "NVARCHAR(MAX)", True,  None, None),
@@ -139,7 +140,7 @@ wb.defined_names["DependencyConditionList"] = DefinedName(
 )
 
 BOOL_DV_TARGETS = {
-    "Jobs": ["Include"],
+    "Jobs": ["Include", "UpdateParallelBatchLimit"],
     "Tasks": ["Include"],
     "TaskType": ["AllowParallel"],
 }

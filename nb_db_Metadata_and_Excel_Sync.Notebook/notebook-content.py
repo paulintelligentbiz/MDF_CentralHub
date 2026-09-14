@@ -103,6 +103,22 @@ DEFAULT_CONNECTION_STRING = (
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 WORKBOOK_PATH = "/lakehouse/default/Files/MetadataSyncFiles/orch_metadata.xlsx"
 
+# Mirrors the METADATA block's default_lakehouse/default_lakehouse_workspace_id above -- used
+# only to build a OneLake link to print after a sync. If this notebook is ever re-pointed at a
+# different lakehouse, update both places together.
+ONELAKE_WORKSPACE_ID = "a937b42f-1407-41c9-b5bf-33288dc7f60f"
+ONELAKE_LAKEHOUSE_ID = "48052622-141c-4471-8abb-8445a634ae6f"
+
+
+def _onelake_url(path=WORKBOOK_PATH):
+    """Build the OneLake HTTPS URL (the standard ADLS Gen2-style OneLake endpoint,
+    onelake.dfs.fabric.microsoft.com/{workspaceId}/{itemId}/...) for a file given its local
+    /lakehouse/default/... mount path. Opening it requires being signed in to this tenant --
+    depending on the browser/Office integration in use it either previews the file or downloads
+    it, but it always resolves to this exact workbook, not just the lakehouse root."""
+    relative = path.split("/lakehouse/default/", 1)[-1]  # e.g. "Files/MetadataSyncFiles/orch_metadata.xlsx"
+    return f"https://onelake.dfs.fabric.microsoft.com/{ONELAKE_WORKSPACE_ID}/{ONELAKE_LAKEHOUSE_ID}/{relative}"
+
 
 # METADATA ********************
 
@@ -205,10 +221,10 @@ TABLE_SPECS = [
         "sheet": "Jobs", "schema": "orch", "table": "Jobs",
         "pk": ["JobName"],
         "columns": ["JobName", "Include", "TimeoutInSeconds", "Retries",
-                    "RetryIntervalInSeconds", "ParallelBatchLimit", "ScheduledStartUTC",
-                    "ParametersJson", "Dependencies", "WorkspaceName", "Environment",
-                    "LoggingLevel"],
-        "bit_columns": ["Include"],
+                    "RetryIntervalInSeconds", "UpdateParallelBatchLimit", "ParallelBatchLimit",
+                    "ScheduledStartUTC", "ParametersJson", "Dependencies", "WorkspaceName",
+                    "Environment", "LoggingLevel"],
+        "bit_columns": ["Include", "UpdateParallelBatchLimit"],
         "time_columns": ["ScheduledStartUTC"],
     },
     {
@@ -344,7 +360,8 @@ def SyncSQLToExcel(workbook_path=WORKBOOK_PATH, conn=None):
     """DB -> Excel. Clears the contents of every managed sheet in the workbook
     and repopulates each one from its matching orch table. Full overwrite --
     there's no merge, so any hand edits made to the workbook since the last
-    sync are discarded, not preserved."""
+    sync are discarded, not preserved. Prints a OneLake link to the updated
+    workbook alongside the per-table row-count summary."""
     db_conn, owns_conn = get_connection(conn)
     summary = {}
     try:
@@ -364,6 +381,7 @@ def SyncSQLToExcel(workbook_path=WORKBOOK_PATH, conn=None):
         if owns_conn:
             db_conn.close()
     print(summary)
+    print(f"Updated workbook: {_onelake_url(workbook_path)}")
     return summary
 
 
