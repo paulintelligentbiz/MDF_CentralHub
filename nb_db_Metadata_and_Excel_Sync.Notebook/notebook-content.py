@@ -60,12 +60,16 @@
 # one-off cell that regenerated `orch.Tasks` from a specific source database
 # (`ContosoDW-DEV`). Both were dropped here to keep this notebook to exactly its
 # stated job -- ask if you want that one-off relocated somewhere instead of lost.
-# # **Not managed here:** `orch.TaskWatermark` is runtime execution state written
-# by the pipelines themselves (current/previous watermark values, last-modified
-# timestamp) -- not hand-authored metadata -- so it has no sheet in this workbook
-# and neither function touches it. If it has rows referencing a task,
-# `SyncExcelToSQL` deleting that task from `orch.Tasks` will fail with a foreign
-# key violation; clear the relevant watermark rows first if you hit that.
+# # **Not managed here:** `orch.TaskWatermark` (runtime execution state written by
+# the pipelines) and the `log.JobRunEvent`/`log.TaskRunEvent` run-history tables
+# are not hand-authored metadata, so none of them has a sheet in this workbook --
+# but each carries a foreign key into `orch.Jobs`/`orch.Tasks` by name
+# (`EXTERNAL_FKS_TO_ORCH`). `SyncExcelToSQL` temporarily disables exactly those
+# constraints around its delete+reinsert and re-validates them before committing,
+# so a Job/Task can be replaced under the same name without a foreign key
+# violation. If a Job/Task was actually renamed or removed in Excel and one of
+# these tables still references the old name, that re-validation fails and the
+# whole sync rolls back -- clean up (or restore) the old name and retry.
 
 
 # CELL ********************
@@ -228,6 +232,19 @@ TABLE_SPECS = [
     },
 ]
 
+# Foreign keys that reference orch.Jobs/orch.Tasks by name from tables this notebook does NOT
+# manage -- log.* run-history and orch.TaskWatermark. A live database refuses to delete a
+# Job/Task row while any of these still point at it, even one about to be reinserted under the
+# same name a moment later, since the DELETE happens before the INSERT. SyncExcelToSQL disables
+# each of these around its delete+reinsert and re-validates them (WITH CHECK) before committing
+# -- see SyncExcelToSQL's docstring.
+EXTERNAL_FKS_TO_ORCH = [
+    ("log", "JobRunEvent", "FK_JobRunEvent_JobName"),
+    ("log", "TaskRunEvent", "FK_TaskRunEvent_JobName"),
+    ("log", "TaskRunEvent", "FK_TaskRunEvent_TaskName"),
+    ("orch", "TaskWatermark", "FK_TaskWatermark_Task"),
+]
+
 
 # METADATA ********************
 
@@ -360,11 +377,16 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     Because this unconditionally discards the database's current contents for
     every managed table, it refuses to run unless confirm=True.
 
-    orch.TaskWatermark isn't managed by this notebook (see the notes at the
-    top) but does have a foreign key into orch.Tasks. If it has rows
-    referencing a task this deletes, the delete on orch.Tasks will fail with a
-    foreign key violation -- clear the relevant watermark rows first if that
-    happens.
+    log.JobRunEvent/log.TaskRunEvent (run history) and orch.TaskWatermark
+    aren't managed by this notebook (see the notes at the top), but each has
+    a foreign key into orch.Jobs/orch.Tasks by name -- see EXTERNAL_FKS_TO_ORCH.
+    Those specific constraints are disabled for the duration of the
+    delete+reinsert below and re-validated (WITH CHECK) right before commit.
+    If a Job/Task was renamed or removed in Excel and one of those tables
+    still has rows referencing the old name, that re-validation fails and the
+    whole sync (data changes included) rolls back -- clean up or restore the
+    referenced name and retry, rather than the constraint being silently left
+    disabled or the old history silently deleted.
     """
     if not confirm:
         raise ValueError(
@@ -389,6 +411,14 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     try:
         cur = db_conn.cursor()
 
+        # Relax the external FKs (log run-history, orch.TaskWatermark) that point at
+        # orch.Jobs/orch.Tasks by name but aren't part of this notebook's own delete/insert
+        # order below -- otherwise a DELETE on Jobs/Tasks is refused outright while any
+        # history/watermark row still references it, even one about to reappear under the
+        # same name a few statements later.
+        for schema, table, fk in EXTERNAL_FKS_TO_ORCH:
+            cur.execute(f"ALTER TABLE [{schema}].[{table}] NOCHECK CONSTRAINT [{fk}]")
+
         # Delete-all, child-first (reverse of TABLE_SPECS' parent-first order).
         for spec in reversed(TABLE_SPECS):
             cur.execute(f"DELETE FROM [{spec['schema']}].[{spec['table']}]")
@@ -407,6 +437,15 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
                 [[row.get(c) for c in cols] for row in rows],
             )
             summary[spec["table"]] = len(rows)
+
+        # Re-validate the relaxed FKs now that the replacement rows are in place (WITH CHECK
+        # forces SQL Server to actually scan for violations, not just re-arm the constraint
+        # untrusted). If a Job/Task got renamed or removed in Excel and a history/watermark row
+        # still points at the old name, this raises here -- caught below, which rolls back the
+        # whole transaction (data changes and constraint state both), rather than leaving
+        # orphaned history or a disabled constraint behind.
+        for schema, table, fk in EXTERNAL_FKS_TO_ORCH:
+            cur.execute(f"ALTER TABLE [{schema}].[{table}] WITH CHECK CHECK CONSTRAINT [{fk}]")
 
         db_conn.commit()
     except Exception:
