@@ -156,7 +156,7 @@ The root of the run hierarchy. A run-event record for job-level invocations — 
 | Column | Data Type | Purpose |
 |---|---|---|
 | JobRunEventId | BIGINT NOT NULL | **Primary key.** *(Renamed from the generic `RunLogId` every event table used to share.)* Also a foreign key to `log.RunLog` — equal to the `RunLogId` of the `RunLog` row `spLogJobRunEvent` opened for this job run. |
-| JobName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Jobs` — which job this run event belongs to. |
+| JobName | VARCHAR(200) NOT NULL | Which job this run event belongs to. Denormalized reference to `orch.Jobs.JobName` — not FK-enforced (`FK_JobRunEvent_JobName` was dropped; see the schema note below). |
 | LoggingLevel | TINYINT NOT NULL (default 1) | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
 | JobInstanceId | NVARCHAR(100) NULL | Identifier for this specific instance/execution of the job. |
 | ItemId | NVARCHAR(100) NULL | Identifier of the Fabric item that was invoked. |
@@ -168,7 +168,7 @@ The root of the run hierarchy. A run-event record for job-level invocations — 
 | EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the job run. |
 | FailureReason | NVARCHAR(MAX) NULL | Reason for failure, if any. |
 
-**Constraints:** `PRIMARY KEY CLUSTERED (JobRunEventId)`; `FK_JobRunEvent_JobName FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_JobRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_JobRunEvent_RunLog FOREIGN KEY (JobRunEventId) REFERENCES log.RunLog (RunLogId)`.
+**Constraints:** `PRIMARY KEY CLUSTERED (JobRunEventId)`; `FK_JobRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_JobRunEvent_RunLog FOREIGN KEY (JobRunEventId) REFERENCES log.RunLog (RunLogId)`.
 
 One row per Job run: opened by `spLogJobRunEvent` (start — creates the `RunLog` + `JobRunEvent` rows together, called from `pl_Orchestrator_Top_Level`'s "Log Job Start", passed the Job's own `LoggingLevel` via `orch.spGetJob`) and closed by `spInsertJobRunEvent` (end/failure — `UPDATE`s that same row by `JobRunEventId`, and adds a closing `log.RunLog` entry). The orchestrator pipeline has a genuine failure branch ("Log Job Failure", `dependencyConditions: ["Failed"]` on the task-processing loop) in addition to the success path, so a thrown exception or timeout no longer leaves the row stuck at `Status = 'Running'` forever.
 
@@ -176,7 +176,7 @@ One row per Job run: opened by `spLogJobRunEvent` (start — creates the `RunLog
 
 ### log.PipelineRunEvent
 
-A run-event record for pipeline-level invocations — logged by the two Wave Runner pipelines (`pl_Task_Wave_Runner_Parallel`/`pl_Task_Wave_Runner_Sequential`, "Log Pipeline Start"/"Log Pipeline End"/"Log Pipeline Failure") around each wave's `ForEach` loop. Has no `JobName`/`TaskName` column or FK of its own — it only relates back to `orch.Jobs` indirectly, through `JobRunEventId` → `JobRunEvent.JobName`.
+A run-event record for pipeline-level invocations — logged by the two Wave Runner pipelines (`pl_Task_Wave_Runner_Parallel`/`pl_Task_Wave_Runner_Sequential`, "Log Pipeline Start"/"Log Pipeline End"/"Log Pipeline Failure") around each wave's `ForEach` loop. Has no `JobName`/`TaskName` column of its own — it only relates back to a job at all through `JobRunEventId` → `JobRunEvent.JobName`, and that last hop is a denormalized, unenforced reference (see the schema note under `log.TaskRunEvent`), not a real FK join.
 
 | Column | Data Type | Purpose |
 |---|---|---|
@@ -207,18 +207,18 @@ A run-event record for individual Task invocations — the task-level counterpar
 |---|---|---|
 | TaskRunEventId | BIGINT NOT NULL | **Primary key.** *(Renamed from the generic `RunLogId` every event table used to share.)* Also a foreign key to `log.RunLog` — equal to the `RunLogId` of the `RunLog` row `spLogTaskRunEvent` opened for this task run. |
 | JobRunEventId | BIGINT NULL | **Foreign key** to `log.JobRunEvent` — the Job run this task executed under, if any (run-hierarchy link; nullable since a task can run outside of any job-level invocation). |
-| JobName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Jobs` — which job this task belongs to. |
-| TaskName | VARCHAR(200) NOT NULL | **Foreign key** to `orch.Tasks` — which task this run event belongs to. |
+| JobName | VARCHAR(200) NOT NULL | Which job this task belongs to. Denormalized reference to `orch.Jobs.JobName` — not FK-enforced (`FK_TaskRunEvent_JobName` was dropped; see the schema note below). |
+| TaskName | VARCHAR(200) NOT NULL | Which task this run event belongs to. Denormalized reference to `orch.Tasks.TaskName` — not FK-enforced (`FK_TaskRunEvent_TaskName` was dropped; see the schema note below). |
 | LoggingLevel | TINYINT NOT NULL | **Foreign key** to `log.LoggingLevel` — verbosity level this event was logged at. |
 | Status | NVARCHAR(50) NULL | Outcome status of this task run. |
 | StartTimeUtc | DATETIME2(7) NULL | Start timestamp (UTC) for the task run. |
 | EndTimeUtc | DATETIME2(7) NULL | End timestamp (UTC) for the task run. |
 
-**Constraints:** `PRIMARY KEY CLUSTERED (TaskRunEventId)`; `FK_TaskRunEvent_JobName FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_TaskRunEvent_TaskName FOREIGN KEY (TaskName) REFERENCES orch.Tasks`; `FK_TaskRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_TaskRunEvent_RunLog FOREIGN KEY (TaskRunEventId) REFERENCES log.RunLog (RunLogId)`; `FK_TaskRunEvent_JobRunEvent FOREIGN KEY (JobRunEventId) REFERENCES log.JobRunEvent (JobRunEventId)`.
+**Constraints:** `PRIMARY KEY CLUSTERED (TaskRunEventId)`; `FK_TaskRunEvent_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_TaskRunEvent_RunLog FOREIGN KEY (TaskRunEventId) REFERENCES log.RunLog (RunLogId)`; `FK_TaskRunEvent_JobRunEvent FOREIGN KEY (JobRunEventId) REFERENCES log.JobRunEvent (JobRunEventId)`.
 
 One row per Task invocation: opened by `spLogTaskRunEvent` (start — creates the `RunLog` + `TaskRunEvent` rows together, called from `pl_Task_Executor`'s "Log Task Start") and closed by `spInsertTaskRunEvent` (end/failure — `UPDATE`s that row by `TaskRunEventId`, and adds a closing `log.RunLog` entry with `Status = 'Succeeded'`/`'Failed'`, which is what `orch.spGetNextWave`/`orch.spGetRunStatus` actually query to detect completion). `pl_Task_Executor` has both "Log Task Success" and a genuine "Log Task Failure" branch — previously there was no failure path at all here, so a failed task never wrote a `Failed` row to `log.RunLog`, and the orchestrator's `Until` loop would simply spin until its 12-hour timeout.
 
-> **Note:** `JobName`/`TaskName` here are validated against `orch.Jobs`/`orch.Tasks` rather than against `log.JobRunEvent`, since a foreign key needs a unique target and `JobRunEvent` has no unique key on `JobName` alone. The new `JobRunEventId` column (not `TaskRunEventId`'s equality with a `RunLogId` value) is what ties a `TaskRunEvent` row back to its parent `JobRunEvent` row via a real FK.
+> **Schema note — no log→orch foreign keys:** `JobName`/`TaskName` here (and `JobName` on `log.JobRunEvent`) used to be FK-enforced against `orch.Jobs`/`orch.Tasks`. `FK_JobRunEvent_JobName`, `FK_TaskRunEvent_JobName`, and `FK_TaskRunEvent_TaskName` have all since been dropped: no table in the `log` schema should be able to block deleting or renaming an `orch.Jobs`/`orch.Tasks` row just because run-history references it by name. These columns are now denormalized and unenforced, the same convention `ActivityRunEvent.TaskName` always used. The `JobRunEventId` run-hierarchy FKs (`JobRunEvent` → `PipelineRunEvent`/`TaskRunEvent`/`ActivityRunEvent`) are unaffected — those are `log`-to-`log` links, not `log`-to-`orch`, and stay fully enforced. The one surviving `log`↔`orch`-adjacent FK anywhere in the database is `orch.TaskWatermark.FK_TaskWatermark_Task` (`orch.TaskWatermark` → `orch.Tasks`) — that's an `orch`-schema table, not `log`, so it's outside this rule; `nb_db_Metadata_and_Excel`'s `SyncExcelToSQL` still has to relax it (see that notebook's `EXTERNAL_FKS_TO_ORCH`) since it isn't part of the Excel sync either.
 
 ### log.ActivityRunEvent
 
@@ -279,9 +279,9 @@ Small lookup table enumerating valid logging verbosity levels, referenced by `or
 - `orch.JobDependencies` — edges between `orch.Jobs` rows, each gated on an `orch.DependencyCondition`
 - `orch.TaskDependencies` — edges between `orch.Tasks` rows, each gated on an `orch.DependencyCondition`
 - `orch.Jobs`/`orch.Tasks`/`log.JobRunEvent`/`log.PipelineRunEvent`/`log.TaskRunEvent`/`log.ActivityRunEvent` → `log.LoggingLevel` (shared verbosity control)
-- `log.JobRunEvent` → `orch.Jobs` (`JobName` foreign key)
-- `log.TaskRunEvent` → `orch.Jobs` (`JobName`) and `orch.Tasks` (`TaskName`)
-- `log.PipelineRunEvent` has no direct FK to `orch.Jobs`/`orch.Tasks`; it identifies the Fabric pipeline via `ItemId` and, when invoked as part of a Job run, links back to that Job only indirectly through `JobRunEventId`
+- No table in the `log` schema holds an enforced FK into `orch.Jobs`/`orch.Tasks` — `log.JobRunEvent.JobName`, `log.TaskRunEvent.JobName`, and `log.TaskRunEvent.TaskName` are all denormalized, unenforced references now (`FK_JobRunEvent_JobName`/`FK_TaskRunEvent_JobName`/`FK_TaskRunEvent_TaskName` were dropped, same convention as `log.ActivityRunEvent.TaskName` always used), so run-history never blocks deleting or renaming an `orch.Jobs`/`orch.Tasks` row
+- `log.PipelineRunEvent` has no `JobName`/`TaskName` column at all; it identifies the Fabric pipeline via `ItemId` and, when invoked as part of a Job run, links back to that Job only indirectly through `JobRunEventId`
+- The one surviving FK anywhere from a run-tracking table into `orch` is `orch.TaskWatermark` → `orch.Tasks` (`FK_TaskWatermark_Task`) — but `TaskWatermark` is an `orch`-schema table, not `log`, so it's outside the "no log→orch FK" rule above
 - `log.RunLog` 1—1 `log.JobRunEvent`, `log.RunLog` 1—1 `log.PipelineRunEvent`, `log.RunLog` 1—1 `log.TaskRunEvent`, `log.RunLog` 1—* `log.ActivityRunEvent` (all are detail children of a run-history row; see the schema note above on why the first three are 1—1 on their own PK while `ActivityRunEvent` can share a `RunLogId`)
 - Run hierarchy via `JobRunEventId`: `log.JobRunEvent` 1—{0,1} `log.PipelineRunEvent`, `log.JobRunEvent` 1—* `log.TaskRunEvent`, `log.JobRunEvent` 1—* `log.ActivityRunEvent` (every descendant event of a Job run can be found by its `JobRunEventId`, regardless of how many Pipeline/Task/Activity runs occurred underneath)
 

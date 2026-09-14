@@ -48,7 +48,7 @@ erDiagram
     }
     JobRunEvent {
         bigint JobRunEventId PK,FK
-        varchar JobName FK
+        varchar JobName
         tinyint LoggingLevel FK
         nvarchar Status
     }
@@ -61,8 +61,8 @@ erDiagram
     TaskRunEvent {
         bigint TaskRunEventId PK,FK
         bigint JobRunEventId FK
-        varchar JobName FK
-        varchar TaskName FK
+        varchar JobName
+        varchar TaskName
         tinyint LoggingLevel FK
         nvarchar Status
     }
@@ -96,10 +96,6 @@ erDiagram
     PipelineRunEvent }o--|| LoggingLevel : "LoggingLevel"
     TaskRunEvent }o--|| LoggingLevel : "LoggingLevel"
     ActivityRunEvent }o--|| LoggingLevel : "LoggingLevel"
-
-    Jobs ||--o{ JobRunEvent : "JobName"
-    Jobs ||--o{ TaskRunEvent : "JobName"
-    Tasks ||--o{ TaskRunEvent : "TaskName"
 
     RunLog ||--o| JobRunEvent : "JobRunEventId = RunLogId (opening row)"
     RunLog ||--o| PipelineRunEvent : "PipelineRunEventId = RunLogId (opening row)"

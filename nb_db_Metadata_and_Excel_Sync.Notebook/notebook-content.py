@@ -61,14 +61,19 @@
 # (`ContosoDW-DEV`). Both were dropped here to keep this notebook to exactly its
 # stated job -- ask if you want that one-off relocated somewhere instead of lost.
 # # **Not managed here:** `orch.TaskWatermark` (runtime execution state written by
-# the pipelines) and the `log.JobRunEvent`/`log.TaskRunEvent` run-history tables
-# are not hand-authored metadata, so none of them has a sheet in this workbook --
-# but each carries a foreign key into `orch.Jobs`/`orch.Tasks` by name
-# (`EXTERNAL_FKS_TO_ORCH`). `SyncExcelToSQL` temporarily disables exactly those
-# constraints around its delete+reinsert and re-validates them before committing,
-# so a Job/Task can be replaced under the same name without a foreign key
-# violation. If a Job/Task was actually renamed or removed in Excel and one of
-# these tables still references the old name, that re-validation fails and the
+# the pipelines) and the `log.TaskRunEvent` run-history table are not
+# hand-authored metadata, so neither has a sheet in this workbook. No table in
+# the `log` schema carries a foreign key into `orch.Jobs`/`orch.Tasks` anymore --
+# `FK_JobRunEvent_JobName`, `FK_TaskRunEvent_JobName`, and `FK_TaskRunEvent_TaskName`
+# were all dropped from the schema, so those columns are denormalized/unenforced
+# now, same convention as `ActivityRunEvent.TaskName` always was. The one
+# survivor is `orch.TaskWatermark.TaskName`, which still carries a real foreign
+# key into `orch.Tasks` (`EXTERNAL_FKS_TO_ORCH`) since `TaskWatermark` is an
+# `orch`-schema table, not `log`. `SyncExcelToSQL` temporarily disables that one
+# constraint around its delete+reinsert and re-validates it before committing,
+# so a Task can be replaced under the same name without a foreign key violation.
+# If a Task was actually renamed or removed in Excel and `TaskWatermark` still
+# references the old name, that re-validation fails and the
 # whole sync rolls back -- clean up (or restore) the old name and retry.
 
 
@@ -233,15 +238,22 @@ TABLE_SPECS = [
 ]
 
 # Foreign keys that reference orch.Jobs/orch.Tasks by name from tables this notebook does NOT
-# manage -- log.* run-history and orch.TaskWatermark. A live database refuses to delete a
-# Job/Task row while any of these still point at it, even one about to be reinserted under the
-# same name a moment later, since the DELETE happens before the INSERT. SyncExcelToSQL disables
-# each of these around its delete+reinsert and re-validates them (WITH CHECK) before committing
-# -- see SyncExcelToSQL's docstring.
+# manage. A live database refuses to delete a Job/Task row while any of these still point at it,
+# even one about to be reinserted under the same name a moment later, since the DELETE happens
+# before the INSERT. SyncExcelToSQL disables each of these around its delete+reinsert and
+# re-validates them (WITH CHECK) before committing -- see SyncExcelToSQL's docstring.
+#
+# No table in the log schema should hold a hard FK into orch that could block deleting or
+# renaming an orch.Jobs/orch.Tasks row -- log.JobRunEvent.JobName, log.TaskRunEvent.JobName, and
+# log.TaskRunEvent.TaskName were all FK-enforced this way at one point; all three constraints
+# (FK_JobRunEvent_JobName, FK_TaskRunEvent_JobName, FK_TaskRunEvent_TaskName) have since been
+# dropped from the schema, so those columns are now denormalized/unenforced, same convention as
+# ActivityRunEvent.TaskName always was. log schema is FK-clean into orch as of this rewrite.
+#
+# orch.TaskWatermark is the one survivor -- it's an orch-schema table (not log), so it's outside
+# that rule, and its FK_TaskWatermark_Task into orch.Tasks is still real and still needs relaxing
+# here since this notebook doesn't manage TaskWatermark either.
 EXTERNAL_FKS_TO_ORCH = [
-    ("log", "JobRunEvent", "FK_JobRunEvent_JobName"),
-    ("log", "TaskRunEvent", "FK_TaskRunEvent_JobName"),
-    ("log", "TaskRunEvent", "FK_TaskRunEvent_TaskName"),
     ("orch", "TaskWatermark", "FK_TaskWatermark_Task"),
 ]
 
@@ -377,16 +389,20 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     Because this unconditionally discards the database's current contents for
     every managed table, it refuses to run unless confirm=True.
 
-    log.JobRunEvent/log.TaskRunEvent (run history) and orch.TaskWatermark
-    aren't managed by this notebook (see the notes at the top), but each has
-    a foreign key into orch.Jobs/orch.Tasks by name -- see EXTERNAL_FKS_TO_ORCH.
-    Those specific constraints are disabled for the duration of the
-    delete+reinsert below and re-validated (WITH CHECK) right before commit.
-    If a Job/Task was renamed or removed in Excel and one of those tables
-    still has rows referencing the old name, that re-validation fails and the
-    whole sync (data changes included) rolls back -- clean up or restore the
+    No table in the log schema carries an FK into orch.Jobs/orch.Tasks anymore
+    (FK_JobRunEvent_JobName, FK_TaskRunEvent_JobName, and FK_TaskRunEvent_TaskName
+    were all dropped -- those columns are now denormalized/unenforced, same
+    convention as ActivityRunEvent.TaskName always was), so log-schema history
+    never blocks this function's deletes. orch.TaskWatermark is the one
+    remaining external FK: it isn't managed by this notebook (see the notes at
+    the top) but still has a real foreign key into orch.Tasks by TaskName --
+    see EXTERNAL_FKS_TO_ORCH. That constraint is disabled for the duration of
+    the delete+reinsert below and re-validated (WITH CHECK) right before
+    commit. If a Task was renamed or removed in Excel and TaskWatermark still
+    has rows referencing the old name, that re-validation fails and the whole
+    sync (data changes included) rolls back -- clean up or restore the
     referenced name and retry, rather than the constraint being silently left
-    disabled or the old history silently deleted.
+    disabled or the old watermark data silently orphaned.
     """
     if not confirm:
         raise ValueError(

@@ -4,6 +4,8 @@
 -- happening to hold the same RunLogId value.
 CREATE TABLE [log].[JobRunEvent] (
     [JobRunEventId]  BIGINT         NOT NULL,
+    -- Denormalized, not FK-enforced (FK_JobRunEvent_JobName dropped) -- same convention as
+    -- ActivityRunEvent.TaskName: this row should still outlive a renamed/deleted orch.Jobs row.
     [JobName]        VARCHAR (200)  NOT NULL,
     [LoggingLevel]   TINYINT        NOT NULL,
     [JobInstanceId]  NVARCHAR (100) NULL,
@@ -16,7 +18,6 @@ CREATE TABLE [log].[JobRunEvent] (
     [EndTimeUtc]     DATETIME2 (7)  NULL,
     [FailureReason]  NVARCHAR (MAX) NULL,
     CONSTRAINT [PK_JobRunEvent] PRIMARY KEY CLUSTERED ([JobRunEventId] ASC),
-    CONSTRAINT [FK_JobRunEvent_JobName] FOREIGN KEY ([JobName]) REFERENCES [orch].[Jobs] ([JobName]),
     CONSTRAINT [FK_JobRunEvent_LoggingLevel] FOREIGN KEY ([LoggingLevel]) REFERENCES [log].[LoggingLevel] ([LoggingLevel]),
     CONSTRAINT [FK_JobRunEvent_RunLog] FOREIGN KEY ([JobRunEventId]) REFERENCES [log].[RunLog] ([RunLogId])
 );
