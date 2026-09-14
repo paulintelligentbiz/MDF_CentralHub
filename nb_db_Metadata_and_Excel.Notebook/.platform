@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_db_Metadata_and_Excel",
+    "description": "Two-way sync between db_Metadata's orch schema and orch_metadata.xlsx: SyncSQLToExcel, SyncExcelToSQL, CompareSQLAndExcel"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "f0f44741-2d99-443e-b4b2-675644157364"
+  }
+}

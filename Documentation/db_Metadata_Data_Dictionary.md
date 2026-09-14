@@ -3,13 +3,13 @@
 **Database:** `db_Metadata` (Fabric SQL Database, `kalwvg5capkefegg5d6gkpgeza-f62dpkihcteudnn7gmui3r7wb4.database.fabric.microsoft.com,1433`)
 **Schemas:** `orch` (job/task orchestration control data — the Wave Runner MDF framework's metadata), `log` (execution run-history and audit tables)
 
-> **Source note:** This dictionary was compiled from the `db_Metadata.SQLDatabase` SQL project's git-tracked table definitions (`orch/Tables/*.sql`, `log/Tables/*.sql`), cross-checked against the current `orch_metadata.xlsx` workbook contents for the `orch` schema's lookup/reference data. Neither of this session's two execution environments (this cloud container, and the Linux shell bridged to this computer) has outbound network access to the Fabric SQL endpoint, so a live `INFORMATION_SCHEMA` query could not be run directly — see the note at the end of this document if you'd like that verified from inside a Fabric notebook, where a working non-interactive connection already exists (`nb_Metadata_Sync.ipynb`).
+> **Source note:** This dictionary was compiled from the `db_Metadata.SQLDatabase` SQL project's git-tracked table definitions (`orch/Tables/*.sql`, `log/Tables/*.sql`), cross-checked against the current `orch_metadata.xlsx` workbook contents for the `orch` schema's lookup/reference data. Neither of this session's two execution environments (this cloud container, and the Linux shell bridged to this computer) has outbound network access to the Fabric SQL endpoint, so a live `INFORMATION_SCHEMA` query could not be run directly — see the note at the end of this document if you'd like that verified from inside a Fabric notebook, where a working non-interactive connection already exists (`nb_db_Metadata_and_Excel.ipynb`).
 
 ---
 
 ## Schema: `orch`
 
-Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. All seven tables (`Jobs`, `Tasks`, `TaskType`, `ObjectIDs`, `DependencyCondition`, `JobDependencies`, `TaskDependencies`) are kept in sync with `orch_metadata.xlsx` via `nb_Metadata_Sync` — `TABLE_SPECS` lists them parent-first (`DependencyCondition` before the two dependency-edge tables, which reference it) so upserts and deletes respect the foreign keys.
+Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. All seven tables (`Jobs`, `Tasks`, `TaskType`, `ObjectIDs`, `DependencyCondition`, `JobDependencies`, `TaskDependencies`) are kept in sync with `orch_metadata.xlsx` via `nb_db_Metadata_and_Excel` (`SyncSQLToExcel`, `SyncExcelToSQL`, `CompareSQLAndExcel`) — `TABLE_SPECS` lists them parent-first (`DependencyCondition` before the two dependency-edge tables, which reference it) so inserts and deletes respect the foreign keys. `orch.TaskWatermark` is deliberately left out of that sync -- it's runtime execution state, not authored metadata.
 
 ### orch.Jobs
 
@@ -22,6 +22,7 @@ One row per orchestrated Job — a top-level unit of work (e.g., a "wave" of rel
 | TimeoutInSeconds | INT NOT NULL | Maximum time, in seconds, the job as a whole may run before being considered timed out. |
 | Retries | INT NOT NULL | Number of times to retry the job on failure. |
 | RetryIntervalInSeconds | INT NOT NULL | Wait time, in seconds, between retry attempts. |
+| ParallelBatchLimit | INT NOT NULL (default 4) | Max concurrent tasks for this job's parallel wave runner. Read by `pl_Orchestrator_Top_Level` and passed to `nb_Reset_ParallelBatchLimit`, which patches `pl_Task_Wave_Runner_Parallel`'s `ForEach` activity's `batchCount` to this value before the wave runs (that property has no dynamic-content support of its own). |
 | ScheduledStartUTC | TIME(0) NULL | Time of day (UTC) the job is scheduled to start, if it runs on a fixed daily schedule. |
 | ParametersJson | NVARCHAR(MAX) NULL | JSON blob of job-level parameters passed to whatever orchestrates the job. |
 | Dependencies | NVARCHAR(MAX) NULL | JSON array of other `JobName` values this job depends on. (See also `orch.JobDependencies`, below, for the newer relational form of job-to-job precedence.) |
@@ -253,4 +254,4 @@ Small lookup table enumerating valid logging verbosity levels, referenced by `or
 
 ## Verifying against the live database
 
-If you'd like this cross-checked directly against the live schema rather than the git-tracked project files, the fastest path is a short cell run inside `nb_Metadata_Sync.ipynb` (which already has a working non-interactive connection to this exact server) querying `INFORMATION_SCHEMA.COLUMNS` for both schemas — ask and I'll write that cell.
+If you'd like this cross-checked directly against the live schema rather than the git-tracked project files, the fastest path is a short cell run inside `nb_db_Metadata_and_Excel.ipynb` (which already has a working non-interactive connection to this exact server) querying `INFORMATION_SCHEMA.COLUMNS` for both schemas — ask and I'll write that cell.

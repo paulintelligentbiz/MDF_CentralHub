@@ -8,32 +8,32 @@ from openpyxl.utils import get_column_letter
 
 OUT_PATH = "orch_metadata.xlsx"
 
-# (sheet_name, tab_color_hex) in the order they should appear (parents before children)
+# (sheet_name, tab_color_hex) in the order they should appear.
+# Jobs/Tasks first (the two entities you actually author), then their
+# dependency-edge tables, then the lookup tables those edges use, then the
+# cross-cutting ObjectIDs registry last. Excludes orch.TaskWatermark on
+# purpose -- that's runtime execution state written by the pipelines
+# themselves, not hand-authored metadata, so it never round-trips through
+# this workbook (see nb_db_Metadata_and_Excel's notes).
 SHEETS = [
-    ("ObjectIDs", "BF8F00"),
-    ("TaskType",  "7030A0"),
-    ("Jobs",      "2F5597"),
-    ("Tasks",     "548235"),
+    ("Jobs",               "2F5597"),
+    ("Tasks",              "548235"),
+    ("JobDependencies",    "31859B"),
+    ("TaskDependencies",   "C55A11"),
+    ("DependencyCondition","808080"),
+    ("TaskType",           "7030A0"),
+    ("ObjectIDs",          "BF8F00"),
 ]
 
 # column spec: (name, sql_type, nullable, default, key_note)
 COLUMNS = {
-    "ObjectIDs": [
-        ("WorkspaceName", "VARCHAR(200)", False, None, "PK (1/2)"),
-        ("ObjectName",    "VARCHAR(200)", False, None, "PK (2/2)"),
-        ("ObjectID",      "VARCHAR(200)", False, None, None),
-        ("WorkspaceID",   "VARCHAR(200)", True,  None, None),
-    ],
-    "TaskType": [
-        ("TaskType",      "NVARCHAR(50)", False, None, "PK"),
-        ("AllowParallel", "BIT",          False, "1",  None),
-    ],
     "Jobs": [
         ("JobName",                "VARCHAR(200)",  False, None, "PK"),
         ("Include",                "BIT",           False, "1",  None),
         ("TimeoutInSeconds",       "INT",           False, None, None),
         ("Retries",                "INT",           False, None, None),
         ("RetryIntervalInSeconds", "INT",           False, None, None),
+        ("ParallelBatchLimit",     "INT",           False, "4",  None),
         ("ScheduledStartUTC",      "TIME(0)",       True,  None, None),
         ("ParametersJson",         "NVARCHAR(MAX)", True,  None, None),
         ("Dependencies",           "NVARCHAR(MAX)", True,  None, None),
@@ -56,6 +56,29 @@ COLUMNS = {
         ("System",                 "NVARCHAR(100)", True,  None, None),
         ("Layer",                  "NVARCHAR(100)", True,  None, None),
         ("LoggingLevel",           "TINYINT",       False, "1",  "FK -> log.LoggingLevel"),
+    ],
+    "JobDependencies": [
+        ("JobName",          "VARCHAR(200)", False, None, "PK (1/2), FK -> orch.Jobs"),
+        ("DependentJobName", "VARCHAR(200)", False, None, "PK (2/2), FK -> orch.Jobs"),
+        ("DependsOn",        "VARCHAR(20)",  False, None, "FK -> orch.DependencyCondition"),
+    ],
+    "TaskDependencies": [
+        ("TaskName",          "VARCHAR(200)", False, None, "PK (1/2), FK -> orch.Tasks"),
+        ("DependentTaskName", "VARCHAR(200)", False, None, "PK (2/2), FK -> orch.Tasks"),
+        ("DependsOn",         "VARCHAR(20)",  False, None, "FK -> orch.DependencyCondition"),
+    ],
+    "DependencyCondition": [
+        ("DependencyCondition", "VARCHAR(20)", False, None, "PK"),
+    ],
+    "TaskType": [
+        ("TaskType",      "NVARCHAR(50)", False, None, "PK"),
+        ("AllowParallel", "BIT",          False, "1",  None),
+    ],
+    "ObjectIDs": [
+        ("WorkspaceName", "VARCHAR(200)", False, None, "PK (1/2)"),
+        ("ObjectName",    "VARCHAR(200)", False, None, "PK (2/2)"),
+        ("ObjectID",      "VARCHAR(200)", False, None, None),
+        ("WorkspaceID",   "VARCHAR(200)", True,  None, None),
     ],
 }
 
@@ -107,9 +130,13 @@ for sheet_name, tab_hex in SHEETS:
 
 # --- Named ranges used as dropdown sources (defined after all sheets exist) ---
 wb.defined_names["JobNameList"] = DefinedName("JobNameList", attr_text=f"Jobs!$A$2:$A${NAMED_RANGE_ROWS}")
+wb.defined_names["TaskNameList"] = DefinedName("TaskNameList", attr_text=f"Tasks!$A$2:$A${NAMED_RANGE_ROWS}")
 wb.defined_names["TaskTypeList"] = DefinedName("TaskTypeList", attr_text=f"TaskType!$A$2:$A${NAMED_RANGE_ROWS}")
 wb.defined_names["WorkspaceNameList"] = DefinedName("WorkspaceNameList", attr_text=f"ObjectIDs!$A$2:$A${NAMED_RANGE_ROWS}")
 wb.defined_names["ObjectNameList"] = DefinedName("ObjectNameList", attr_text=f"ObjectIDs!$B$2:$B${NAMED_RANGE_ROWS}")
+wb.defined_names["DependencyConditionList"] = DefinedName(
+    "DependencyConditionList", attr_text=f"DependencyCondition!$A$2:$A${NAMED_RANGE_ROWS}"
+)
 
 BOOL_DV_TARGETS = {
     "Jobs": ["Include"],
@@ -120,6 +147,10 @@ FK_DV_TARGETS = {
     "Jobs": [("WorkspaceName", "WorkspaceNameList")],
     "Tasks": [("JobName", "JobNameList"), ("TaskType", "TaskTypeList"),
               ("WorkspaceName", "WorkspaceNameList"), ("ObjectName", "ObjectNameList")],
+    "JobDependencies": [("JobName", "JobNameList"), ("DependentJobName", "JobNameList"),
+                         ("DependsOn", "DependencyConditionList")],
+    "TaskDependencies": [("TaskName", "TaskNameList"), ("DependentTaskName", "TaskNameList"),
+                          ("DependsOn", "DependencyConditionList")],
 }
 
 for sheet_name, tab_hex in SHEETS:
