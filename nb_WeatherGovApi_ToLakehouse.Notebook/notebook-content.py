@@ -11,8 +11,7 @@
 # MARKDOWN ********************
 
 # # nb_WeatherGovApi_ToLakehouse
-#
-# Generic, parameterized MDF task notebook: pulls the current daily forecast for
+# # Generic, parameterized MDF task notebook: pulls the current daily forecast for
 # one geography from the National Weather Service's public API (`api.weather.gov`)
 # and lands it as a Bronze Delta table in whatever lakehouse the Task points it
 # at. Same shape as `nb_CopyTableToLakehouse` -- invoked by `pl_Task_Executor` for
@@ -21,8 +20,7 @@
 # destination. Nothing about the destination is configured on the notebook
 # itself, matching the Wave Runner MDF framework's design: every source and
 # destination is data in the Tasks table, not notebook configuration.
-#
-# **How this differs from `nb_CopyTableToLakehouse`:**
+# # **How this differs from `nb_CopyTableToLakehouse`:**
 # - The "source" is a public REST API, not a SQL database -- no ODBC driver, no
 #   AAD login on a source system, nothing to provision beyond write access to
 #   the destination lakehouse. `api.weather.gov` needs no API key/token at all,
@@ -39,8 +37,7 @@
 # - `/forecast` (not `/forecast/hourly`) is deliberately the endpoint used: NWS
 #   already buckets it into one row per ~12-hour day/night period, which is the
 #   "daily sample" this notebook is meant to return, with no resampling needed.
-#
-# **One-time setup before this will run:**
+# # **One-time setup before this will run:**
 # 1. The identity this notebook runs as (your account for manual testing; the
 #    pipeline's identity once scheduled) needs write access to whatever
 #    destination lakehouse(s) the Tasks you run point it at -- same requirement
@@ -251,8 +248,7 @@ print(f"Wrote {DEST_TABLE} to {dest_path} ({spark_df.count()} rows, mode={WRITE_
 # MARKDOWN ********************
 
 # ## Next steps
-#
-# - Register this notebook once in `orch.ObjectIDs` (WorkspaceName/ObjectName ->
+# # - Register this notebook once in `orch.ObjectIDs` (WorkspaceName/ObjectName ->
 #   its real notebook ID + workspace ID, from the Fabric portal after import) --
 #   `FK_Tasks_ObjectIDs_Object` requires that row to exist before any `orch.Tasks`
 #   row can reference this notebook as its `ObjectName`.
