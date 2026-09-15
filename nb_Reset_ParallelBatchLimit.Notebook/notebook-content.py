@@ -20,12 +20,12 @@
 # MARKDOWN ********************
 
 # # nb_Reset_ParallelBatchLimit
-# # Invoked directly by `pl_Orchestrator_Top_Level`'s "Reset Parallel Batch Limit"
+# Invoked directly by `pl_Orchestrator_Top_Level`'s "Reset Parallel Batch Limit"
 # activity -- a `TridentNotebook` activity with a hardcoded `notebookId` (not
 # looked up via `orch.ObjectIDs`, same convention as that pipeline's "Refresh
 # Object IDs" activity / `nb_RefreshObjectIDs`) that only fires when
 # `orch.Jobs.UpdateParallelBatchLimit = 1` for the running Job.
-# # **What this does today:** takes the Job's current `orch.Jobs.ParallelBatchLimit`
+# **What this does today:** takes the Job's current `orch.Jobs.ParallelBatchLimit`
 # value (already fetched by "Get Job Info" and passed in as the `ParallelBatchLimit`
 # parameter) and writes it into `pl_Task_Wave_Runner_Parallel`'s "ForEach Task
 # Parallel" activity as that activity's `batchCount` -- Fabric/ADF pipelines don't
@@ -37,12 +37,12 @@
 # "apply my new batch count" request, not a per-run toggle, so leaving the flag set
 # would just re-patch the pipeline with the same value on every future run for no
 # reason.
-# # **What this does NOT do yet:** compute a new `ParallelBatchLimit` value itself.
+# **What this does NOT do yet:** compute a new `ParallelBatchLimit` value itself.
 # It only *applies* whatever value is already sitting in `orch.Jobs.ParallelBatchLimit`
 # (set by hand in the workbook today). A capacity-aware auto-detect function is
 # written below but deliberately left commented out / uncalled -- see
 # `estimate_batch_limit_from_capacity()` -- until that behavior is actually wanted.
-# # **Setup:**
+# **Setup:**
 # 1. `%pip install pyodbc requests` if either isn't already on the environment.
 # 2. No interactive sign-in needed -- uses `notebookutils.credentials.getToken('pbi')`
 #    for both the Fabric REST API and the `db_Metadata` SQL endpoint, so it's safe
@@ -354,7 +354,7 @@ print(f"{JobName}: {WAVE_RUNNER_PARALLEL_NAME}.{FOREACH_ACTIVITY_NAME}.batchCoun
 # MARKDOWN ********************
 
 # ## Deployment
-# # 1. Import this notebook into the workspace (**New item -> Import notebook**).
+# 1. Import this notebook into the workspace (**New item -> Import notebook**).
 # 2. Grab its notebook ID (from the URL, or the Fabric REST API) and put it in
 #    `pl_Orchestrator_Top_Level`'s "Reset Parallel Batch Limit" activity, replacing
 #    the placeholder `notebookId` (same step as was done for `nb_RefreshObjectIDs`'s
