@@ -114,8 +114,8 @@
             {
               "type": "TridentNotebook",
               "typeProperties": {
-                "notebookId": "458a34c0-047d-43ad-9a4b-4818517f0051",
-                "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
+                "notebookId": "31999007-8a2a-4f92-84e4-41b2494b66d3",
+                "workspaceId": "00000000-0000-0000-0000-000000000000",
                 "parameters": {
                   "JobName": {
                     "value": {
