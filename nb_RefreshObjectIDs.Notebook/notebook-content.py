@@ -25,7 +25,8 @@
 # a workspace, or an item inside one (Notebook, DataPipeline, CopyJob, Dataflow,
 # Lakehouse, ...) -- plus a routine that uses them to refresh `orch.ObjectIDs` in
 # `db_Metadata` from whatever `(WorkspaceName, ObjectName)` pairs are actually
-# referenced by `orch.Tasks` and `orch.Jobs`.
+# referenced by `orch.Tasks` (JobNames aren't included -- a Job is just a
+# grouping key, not a Fabric item anything looks up by GUID).
 # 
 # Meant to be invoked as an activity in `pl_Orchestrator_Top_Level` (see the
 # pipeline change alongside this notebook) so `ObjectIDs` stays in sync with
@@ -44,7 +45,7 @@
 
 # Base parameters -- set by pl_Task_Executor/pl_Orchestrator when invoked as an
 # activity. onlyWorkspaceName narrows the refresh to one workspace; leave null
-# to refresh everything orch.Tasks/orch.Jobs currently reference.
+# to refresh everything orch.Tasks currently references.
 ParametersJson = '{"onlyWorkspaceName": null}'
 
 
@@ -235,19 +236,19 @@ TASK_TYPE_TO_ITEM_TYPE = {
 }
 
 def discover_object_refs(conn, only_workspace_name=None):
-    """Every distinct (WorkspaceName, ObjectName) pair referenced by orch.Tasks
-    or orch.Jobs, paired with the Fabric item type to search for (None for
-    Jobs' own entries / unmapped TaskTypes -- these fall back to a
-    type-unfiltered name search)."""
+    """Every distinct (WorkspaceName, ObjectName) pair referenced by orch.Tasks,
+    paired with the Fabric item type to search for (None for unmapped
+    TaskTypes -- these fall back to a type-unfiltered name search).
+
+    Jobs aren't included here: a JobName is just a grouping key in orch.Jobs,
+    not a Fabric item anything looks up by GUID (orch.spGetNextWave joins
+    orch.ObjectIDs on the Task's own ObjectName only), so there's nothing to
+    resolve for it."""
     cur = conn.cursor()
     cur.execute("""
         SELECT DISTINCT WorkspaceName, ObjectName, TaskType
         FROM orch.Tasks
         WHERE WorkspaceName IS NOT NULL AND TaskType <> 'StoredProcedure'
-        UNION
-        SELECT DISTINCT WorkspaceName, JobName AS ObjectName, CAST(NULL AS NVARCHAR(50)) AS TaskType
-        FROM orch.Jobs
-        WHERE WorkspaceName IS NOT NULL
     """)
     refs = []
     for workspace_name, object_name, task_type in cur.fetchall():
@@ -284,7 +285,7 @@ def upsert_object_id(conn, workspace_name, object_name, object_id, workspace_id)
     return "updated"
 
 def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
-    """Resolve every (WorkspaceName, ObjectName) referenced by orch.Tasks/orch.Jobs
+    """Resolve every (WorkspaceName, ObjectName) referenced by orch.Tasks
     and upsert the result into orch.ObjectIDs. Returns a summary dict; prints
     anything that couldn't be resolved instead of silently skipping it.
 
@@ -295,7 +296,7 @@ def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
     this notebook's cell, which fails the pipeline activity that invoked it
     (pl_Orchestrator_Top_Level's "Refresh Object IDs"), instead of leaving the
     run looking green while orch.ObjectIDs is still silently stale. An
-    unresolved reference almost always means orch.Tasks/orch.Jobs names a
+    unresolved reference almost always means orch.Tasks names a
     WorkspaceName/ObjectName that doesn't match anything actually deployed --
     that's a metadata bug worth stopping the run over, not a transient
     condition worth retrying past."""
@@ -335,7 +336,7 @@ def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
     if not_found:
         raise RuntimeError(
             f"{len(not_found)} of {len(refs)} object reference(s) could not be resolved in "
-            f"Fabric and are left at their previous ObjectID: {not_found}. orch.Tasks/orch.Jobs "
+            f"Fabric and are left at their previous ObjectID: {not_found}. orch.Tasks "
             "likely names a WorkspaceName/ObjectName that doesn't match anything actually "
             "deployed -- fix the metadata (or deploy the missing item) and re-run."
         )
