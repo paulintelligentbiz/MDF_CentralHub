@@ -30,9 +30,9 @@
 # MARKDOWN ********************
 
 # # nb_db_Metadata_and_Excel_Sync
-# # Two-way sync between the `db_Metadata` Fabric SQL database (`orch` schema) and the
+# Two-way sync between the `db_Metadata` Fabric SQL database (`orch` schema) and the
 # `orch_metadata.xlsx` workbook in this folder.
-# # This replaces `nb_Metadata_Sync` -- recreated under this name rather than renamed
+# This replaces `nb_Metadata_Sync` -- recreated under this name rather than renamed
 # in place, since Fabric's Git integration doesn't have a documented, reliable
 # rename path for notebooks and community reports show real cases of a
 # git-connected rename desyncing the workspace from the repo. `nb_Metadata_Sync`
@@ -41,13 +41,13 @@
 # two name-only mentions (the data dictionary and its own `.ipynb` mirror) moved
 # over. Delete the old `nb_Metadata_Sync.Notebook` folder's workspace item once
 # this one is confirmed working.
-# # **Run this notebook somewhere with real network access to the Fabric SQL endpoint** --
-# this needs:
-# # - `pip install pyodbc openpyxl`
+# 
+# ### This needs:
+# - `pip install pyodbc openpyxl`
 # - **ODBC Driver 18 for SQL Server** installed (required for `Authentication=ActiveDirectoryInteractive`)
 # - A browser available for the interactive Microsoft Entra ID sign-in prompt
-# # Three functions, each covering one direction (or neither, for the comparison):
-# # - `SyncSQLToExcel()` -- DB -> Excel. Clears each managed sheet's table and
+# Three functions, each covering one direction (or neither, for the comparison):
+# - `SyncSQLToExcel()` -- DB -> Excel. Clears each managed sheet's table and
 #   repopulates it from the matching `orch` table. Full overwrite of the workbook.
 # - `SyncExcelToSQL()` -- Excel -> DB. Deletes every row in each managed `orch`
 #   table and reinserts every row from the matching sheet. Full overwrite of the
@@ -55,12 +55,12 @@
 # - `CompareSQLAndExcel()` -- read-only. Reports what differs between the two
 #   sides per table (rows only in SQL, rows only in Excel, rows present in both
 #   with different column values) without changing either one.
-# # Earlier versions of this notebook (`pull_metadata_to_excel` / `push_excel_to_metadata`)
+# Earlier versions of this notebook (`pull_metadata_to_excel` / `push_excel_to_metadata`)
 # did an incremental upsert+diff instead of a full replace, and also carried a
 # one-off cell that regenerated `orch.Tasks` from a specific source database
 # (`ContosoDW-DEV`). Both were dropped here to keep this notebook to exactly its
 # stated job -- ask if you want that one-off relocated somewhere instead of lost.
-# # **Not managed here:** `orch.TaskWatermark` (runtime execution state written by
+# **Not managed here:** `orch.TaskWatermark` (runtime execution state written by
 # the pipelines) and the `log.TaskRunEvent` run-history table are not
 # hand-authored metadata, so neither has a sheet in this workbook. No table in
 # the `log` schema carries a foreign key into `orch.Jobs`/`orch.Tasks` anymore --
@@ -552,25 +552,23 @@ def CompareSQLAndExcel(workbook_path=WORKBOOK_PATH, conn=None):
 
 # MARKDOWN ********************
 
-# ## Usage
-# # ```python
-# # See what's actually different before touching either side.
-# CompareSQLAndExcel()
-# # # Database -> Excel: overwrite the workbook with the database's current state.
-# SyncSQLToExcel()
-# # # ...edit orch_metadata.xlsx by hand: add/change/remove rows in each sheet...
-# # # Excel -> database: overwrite the database with the workbook's current state.
-# # Left requiring confirm=True on purpose -- there's no dry_run here, so an
-# # unattended/scheduled run of this notebook can't silently wipe the database
-# # just because a cell executed.
-# SyncExcelToSQL(confirm=True)
-# ```
-
+# ### Usage - Comment / un-comment one function as needed
 
 # CELL ********************
 
-CompareSQLAndExcel()
+# See what's actually different before touching either side.
 
+#CompareSQLAndExcel()
+
+# Database -> Excel: overwrite the workbook with the database's current state.
+#SyncSQLToExcel()
+
+# Edit orch_metadata.xlsx by hand: add/change/remove rows in each sheet...
+# Excel -> database: overwrite the database with the workbook's current state.
+# Left requiring confirm=True on purpose -- there's no dry_run here, so an
+# unattended/scheduled run of this notebook can't silently wipe the database
+# just because a cell executed.
+SyncExcelToSQL(confirm=True)
 
 # METADATA ********************
 
