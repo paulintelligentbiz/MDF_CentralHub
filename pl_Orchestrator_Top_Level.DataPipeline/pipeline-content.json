@@ -118,12 +118,16 @@
                 "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
                 "parameters": {
                   "JobName": {
-                    "value": "@pipeline().parameters.JobName",
-                    "type": "string"
+                    "value": {
+                      "value": "@pipeline().parameters.JobName",
+                      "type": "Expression"
+                    }
                   },
                   "ParallelBatchLimit": {
-                    "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
-                    "type": "int"
+                    "value": {
+                      "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
+                      "type": "Expression"
+                    }
                   }
                 }
               },
