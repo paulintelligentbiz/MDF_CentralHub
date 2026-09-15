@@ -29,7 +29,7 @@
 
 # MARKDOWN ********************
 
-# # nb_db_Metadata_and_Excel
+# # nb_db_Metadata_and_Excel_Sync
 # # Two-way sync between the `db_Metadata` Fabric SQL database (`orch` schema) and the
 # `orch_metadata.xlsx` workbook in this folder.
 # # This replaces `nb_Metadata_Sync` -- recreated under this name rather than renamed
