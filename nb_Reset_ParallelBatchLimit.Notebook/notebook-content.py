@@ -5,44 +5,69 @@
 # META {
 # META   "kernel_info": {
 # META     "name": "synapse_pyspark"
+# META   },
+# META   "dependencies": {
+# META     "mirrored_db": {
+# META       "known_mirrored_dbs": [
+# META         {
+# META           "id": "15a01d6c-0d70-4a2d-b4da-28b809849709"
+# META         }
+# META       ]
+# META     }
 # META   }
 # META }
 
 # MARKDOWN ********************
 
 # # nb_Reset_ParallelBatchLimit
-# # Sets the `batchCount` on `pl_Task_Wave_Runner_Parallel`'s `ForEach Task Parallel`
-# activity to whatever `ParallelBatchLimit` is passed in, by patching that
-# pipeline's item definition through the Fabric REST API.
-# # This exists because a ForEach activity's `batchCount` has no dynamic-content /
-# expression support in the pipeline authoring model (unlike `Items`) -- so a
-# per-job batch limit can only be applied by rewriting the pipeline's saved
-# definition before each run, not by parameterizing the activity itself.
-# # Meant to be invoked as an activity in `pl_Orchestrator_Top_Level` (see the
-# pipeline change alongside this notebook), right after `Get Job Info`, with
-# `ParallelBatchLimit` coming from that job's `orch.Jobs.ParallelBatchLimit`
-# column.
-# # **Setup:**
-# 1. `%pip install requests` if it isn't already on the environment.
-# 2. No interactive sign-in needed -- this uses `notebookutils.credentials.getToken('pbi')`
-#    to get a token for the Fabric REST API, so it's safe to run unattended from
-#    a pipeline.
-# 3. The calling identity (you, or the pipeline's run-as identity) needs at
-#    least Contributor on this workspace (Get Item Definition / Update Item
-#    Definition both require read+write on the target item).
-# # **Git-connected workspace note:** this notebook writes directly to
-# `pl_Task_Wave_Runner_Parallel`'s live item definition, bypassing Git. That
-# shows up as an uncommitted change against the connected branch, and gets
-# silently reverted the next time someone does *Update from Git* without
-# committing it first. That's expected -- this is meant as a per-run override,
-# not a way to make `batchCount` durably dynamic. The repo's checked-in value
-# (currently `4`) stays the source of truth for anyone re-syncing from Git.
+#
+# Invoked directly by `pl_Orchestrator_Top_Level`'s "Reset Parallel Batch Limit"
+# activity -- a `TridentNotebook` activity with a hardcoded `notebookId` (not
+# looked up via `orch.ObjectIDs`, same convention as that pipeline's "Refresh
+# Object IDs" activity / `nb_RefreshObjectIDs`) that only fires when
+# `orch.Jobs.UpdateParallelBatchLimit = 1` for the running Job.
+#
+# **What this does today:** takes the Job's current `orch.Jobs.ParallelBatchLimit`
+# value (already fetched by "Get Job Info" and passed in as the `ParallelBatchLimit`
+# parameter) and writes it into `pl_Task_Wave_Runner_Parallel`'s "ForEach Task
+# Parallel" activity as that activity's `batchCount` -- Fabric/ADF pipelines don't
+# support a dynamic expression for `batchCount` (it's a plain design-time int, not
+# an `{"value":..., "type":"Expression"}` property), so the only way to change it
+# programmatically is to fetch the pipeline's item definition over the Fabric REST
+# API, edit the JSON, and push the definition back. It then clears
+# `orch.Jobs.UpdateParallelBatchLimit` back to 0 for this Job -- this is a one-shot
+# "apply my new batch count" request, not a per-run toggle, so leaving the flag set
+# would just re-patch the pipeline with the same value on every future run for no
+# reason.
+#
+# **What this does NOT do yet:** compute a new `ParallelBatchLimit` value itself.
+# It only *applies* whatever value is already sitting in `orch.Jobs.ParallelBatchLimit`
+# (set by hand in the workbook today). A capacity-aware auto-detect function is
+# written below but deliberately left commented out / uncalled -- see
+# `estimate_batch_limit_from_capacity()` -- until that behavior is actually wanted.
+#
+# **Setup:**
+# 1. `%pip install pyodbc requests` if either isn't already on the environment.
+# 2. No interactive sign-in needed -- uses `notebookutils.credentials.getToken('pbi')`
+#    for both the Fabric REST API and the `db_Metadata` SQL endpoint, so it's safe
+#    to run unattended from a pipeline.
+# 3. The pipeline's run-as identity needs at least Contributor on this workspace
+#    (patching a pipeline's definition needs write access to that item, not just
+#    read/write on `db_Metadata`) plus a Fabric capacity assigned to the workspace
+#    for `getDefinition`/`updateDefinition` to succeed.
+# 4. This notebook itself needs a row added to `orch.ObjectIDs`? No -- like
+#    `nb_RefreshObjectIDs`, it's invoked by a hardcoded `notebookId` directly in
+#    `pl_Orchestrator_Top_Level`'s JSON, not through the metadata-driven Task path,
+#    so it's never looked up by name at runtime.
 
 
 # PARAMETERS CELL ********************
 
-# Base parameter -- set by pl_Orchestrator_Top_Level when invoked as an
-# activity, from the running job's orch.Jobs.ParallelBatchLimit column.
+# Base parameters -- set by pl_Orchestrator_Top_Level's "Reset Parallel Batch
+# Limit" activity. These are Fabric-native notebook parameters (plain typed
+# variables the pipeline activity assigns directly), not the ParametersJson
+# string convention the metadata-driven Task framework uses elsewhere.
+JobName = ""
 ParallelBatchLimit = 4
 
 
@@ -57,6 +82,7 @@ ParallelBatchLimit = 4
 
 import base64
 import json
+import struct
 import time
 
 import requests
@@ -67,60 +93,28 @@ except ImportError:
     _nb_credentials = None  # allows py_compile / unit tests outside a Fabric runtime
 
 FABRIC_API_BASE = "https://api.fabric.microsoft.com/v1"
+_REQUEST_TIMEOUT_SECONDS = 30  # fail fast rather than hang indefinitely -- requests has no default timeout
+_LRO_POLL_INTERVAL_SECONDS = 5
+_LRO_MAX_WAIT_SECONDS = 120
 _token_cache = {}
 
 def _get_pbi_token():
-    """Entra token for the Fabric/Power BI REST API audience -- cached for the
-    notebook session."""
+    """Entra token for the Fabric REST API (also used for the db_Metadata SQL
+    endpoint below) -- cached for the notebook session."""
     if "pbi" not in _token_cache:
         _token_cache["pbi"] = _nb_credentials.getToken("pbi")
     return _token_cache["pbi"]
 
-def _fabric_request(method, path, json_body=None, params=None):
-    """Call the Fabric REST API, transparently handling both the synchronous
-    (200) and long-running-operation (202 Accepted) response shapes: on a 202,
-    polls /operations/{id} until it reaches a terminal state and, once
-    Succeeded, fetches /operations/{id}/result. Returns the parsed JSON body,
-    or None where there isn't one (e.g. a completed Update Item Definition)."""
-    token = _get_pbi_token()
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"{FABRIC_API_BASE}{path}"
-    resp = requests.request(method, url, headers=headers, params=params, json=json_body)
-    resp.raise_for_status()
-
-    if resp.status_code == 202:
-        operation_id = resp.headers.get("x-ms-operation-id")
-        status_url = f"{FABRIC_API_BASE}/operations/{operation_id}"
-        retry_after = int(resp.headers.get("Retry-After", 5))
-        for _ in range(60):  # ~ generous timeout at the observed Retry-After cadence
-            time.sleep(retry_after)
-            state_resp = requests.get(status_url, headers=headers)
-            state_resp.raise_for_status()
-            state = state_resp.json()
-            status = state.get("status")
-            if status == "Succeeded":
-                result_resp = requests.get(f"{status_url}/result", headers=headers)
-                if result_resp.status_code == 200 and result_resp.content:
-                    return result_resp.json()
-                return None
-            if status == "Failed":
-                raise RuntimeError(f"Fabric operation {operation_id} failed: {state.get('error')}")
-            retry_after = int(state_resp.headers.get("Retry-After", retry_after))
-        raise TimeoutError(f"Fabric operation {operation_id} did not complete in time")
-
-    if resp.content:
-        return resp.json()
-    return None
+def _fabric_headers():
+    return {"Authorization": f"Bearer {_get_pbi_token()}"}
 
 def _fabric_get(path, params=None):
     """GET against the Fabric REST API, following continuationToken pagination.
     Returns the concatenated "value" list across all pages."""
-    token = _get_pbi_token()
-    headers = {"Authorization": f"Bearer {token}"}
     url = f"{FABRIC_API_BASE}{path}"
     items = []
     while url:
-        resp = requests.get(url, headers=headers, params=params)
+        resp = requests.get(url, headers=_fabric_headers(), params=params, timeout=_REQUEST_TIMEOUT_SECONDS)
         resp.raise_for_status()
         payload = resp.json()
         items.extend(payload.get("value", []))
@@ -128,41 +122,83 @@ def _fabric_get(path, params=None):
         params = None  # continuationUri already carries the query string
     return items
 
+def _fabric_post_lro(path, body=None):
+    """POST a long-running Fabric operation (getDefinition/updateDefinition both
+    work this way) and poll until it finishes. Returns the final result body
+    (None for an operation with no result payload, e.g. a plain updateDefinition)."""
+    resp = requests.post(
+        f"{FABRIC_API_BASE}{path}", headers=_fabric_headers(), json=body, timeout=_REQUEST_TIMEOUT_SECONDS
+    )
+    if resp.status_code == 200:
+        return resp.json() if resp.content else None
+    if resp.status_code != 202:
+        resp.raise_for_status()
 
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
+    operation_url = resp.headers["Location"]
+    waited = 0
+    while waited < _LRO_MAX_WAIT_SECONDS:
+        time.sleep(_LRO_POLL_INTERVAL_SECONDS)
+        waited += _LRO_POLL_INTERVAL_SECONDS
+        status_resp = requests.get(operation_url, headers=_fabric_headers(), timeout=_REQUEST_TIMEOUT_SECONDS)
+        status_resp.raise_for_status()
+        status = status_resp.json()
+        if status.get("status") == "Succeeded":
+            result_resp = requests.get(
+                f"{operation_url}/result", headers=_fabric_headers(), timeout=_REQUEST_TIMEOUT_SECONDS
+            )
+            if result_resp.status_code == 200 and result_resp.content:
+                return result_resp.json()
+            return None
+        if status.get("status") == "Failed":
+            raise RuntimeError(f"Fabric operation failed: {status}")
+    raise TimeoutError(f"Fabric operation didn't finish within {_LRO_MAX_WAIT_SECONDS}s: {operation_url}")
 
 def get_item_id(workspace_id, item_name, item_type=None):
-    """Resolve an item's GUID by display name within a workspace, optionally
-    filtered by Fabric item type. Returns None if not found; prints a warning
-    and returns the first match if the name is ambiguous."""
+    """Resolve a Fabric item's GUID by display name within a workspace, optionally
+    filtered by item type (e.g. 'DataPipeline'). Returns None if not found; prints
+    a warning and returns the first match if the name is ambiguous."""
     params = {"type": item_type} if item_type else None
     items = _fabric_get(f"/workspaces/{workspace_id}/items", params=params)
     matches = [i for i in items if i.get("displayName") == item_name]
     if not matches:
         return None
     if len(matches) > 1:
-        print(f"WARNING: {len(matches)} items named {item_name!r} in workspace {workspace_id} "
-              f"(type filter={item_type!r}): {[m['id'] for m in matches]}. Using the first.")
+        print(f"WARNING: {len(matches)} items named {item_name!r} (type filter={item_type!r}): "
+              f"{[m['id'] for m in matches]}. Using the first.")
     return matches[0]["id"]
 
-def get_item_definition(workspace_id, item_id):
-    """Current definition parts (path/payload/payloadType) for a Fabric item."""
-    body = _fabric_request("POST", f"/workspaces/{workspace_id}/items/{item_id}/getDefinition")
-    return body["definition"]["parts"]
 
-def update_item_definition(workspace_id, item_id, parts):
-    _fabric_request(
-        "POST",
-        f"/workspaces/{workspace_id}/items/{item_id}/updateDefinition",
-        json_body={"definition": {"parts": parts}},
-    )
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Not used yet -- left here for when a capacity-aware auto-detect is wanted ---
+#
+# def estimate_batch_limit_from_capacity(capacity_id, floor=2, ceiling=16):
+#     """Sketch of a capacity-aware alternative to writing a fixed number into
+#     orch.Jobs.ParallelBatchLimit by hand: look up the workspace's assigned
+#     Fabric capacity SKU and derive a reasonable parallel batch size from its
+#     Spark VCore allotment, instead of a human picking a constant. NOT called
+#     anywhere below -- ParallelBatchLimit is still whatever's already in
+#     orch.Jobs today. Wire this in (replace the plain `ParallelBatchLimit`
+#     variable used further down) once auto-detection is actually wanted, and
+#     test the capacity math against a real capacity before trusting it.
+#     capacities = _fabric_get("/capacities")
+#     capacity = next((c for c in capacities if c["id"] == capacity_id), None)
+#     if capacity is None:
+#         raise ValueError(f"Capacity {capacity_id!r} not found or not visible to this identity")
+#     sku = capacity.get("sku", "")  # e.g. "F64" -- trailing digits are the capacity units
+#     digits = "".join(ch for ch in sku if ch.isdigit())
+#     capacity_units = int(digits) if digits else 0
+#     # Very rough heuristic -- refine against observed Spark pool concurrency limits
+#     # for each SKU before relying on this: 1 batch slot per ~8 capacity units.
+#     estimated = max(floor, min(ceiling, capacity_units // 8 or floor))
+#     return estimated
 
 
 # METADATA ********************
@@ -174,59 +210,63 @@ def update_item_definition(workspace_id, item_id, parts):
 
 # CELL ********************
 
-def set_foreach_batch_count(parts, new_batch_count):
-    """Return `parts` with every ForEach activity's typeProperties.batchCount
-    in pipeline-content.json set to new_batch_count. Raises if that part, or a
-    ForEach activity inside it, isn't found. All other parts pass through
-    unchanged."""
-    updated_parts = []
-    found_pipeline_json = False
-    for part in parts:
-        if part["path"] != "pipeline-content.json":
-            updated_parts.append(part)
-            continue
-        found_pipeline_json = True
-        raw = base64.b64decode(part["payload"]).decode("utf-8")
-        content = json.loads(raw)
-        foreach_activities = [
-            a for a in content.get("properties", {}).get("activities", [])
-            if a.get("type") == "ForEach"
-        ]
-        if not foreach_activities:
-            raise ValueError("No ForEach activity found in pipeline-content.json")
-        if len(foreach_activities) > 1:
-            names = [a.get("name") for a in foreach_activities]
-            print(f"WARNING: {len(foreach_activities)} ForEach activities found ({names}); "
-                  f"setting batchCount={new_batch_count} on all of them.")
-        for activity in foreach_activities:
-            activity.setdefault("typeProperties", {})["batchCount"] = new_batch_count
-        new_payload = base64.b64encode(json.dumps(content, indent=2).encode("utf-8")).decode("ascii")
-        updated_parts.append({"path": part["path"], "payload": new_payload, "payloadType": "InlineBase64"})
-    if not found_pipeline_json:
-        raise ValueError("pipeline-content.json not found in item definition")
-    return updated_parts
+WAVE_RUNNER_PARALLEL_NAME = "pl_Task_Wave_Runner_Parallel"
+FOREACH_ACTIVITY_NAME = "ForEach Task Parallel"
 
-def reset_parallel_batch_limit(pipeline_name, new_batch_count, current_workspace_id=None):
-    """Patch pipeline_name's ForEach batchCount to new_batch_count in place, via
-    the Fabric REST API. pipeline_name must be a DataPipeline item in the same
-    workspace as this notebook."""
-    if not isinstance(new_batch_count, int) or isinstance(new_batch_count, bool) or new_batch_count < 1:
-        raise ValueError(f"ParallelBatchLimit must be a positive integer, got {new_batch_count!r}")
-    if new_batch_count > 50:
-        # Fabric's documented ForEach batchCount ceiling -- not enforced client-side,
-        # so a too-high value would otherwise fail obscurely at pipeline run time.
-        print(f"WARNING: ParallelBatchLimit={new_batch_count} exceeds the ForEach activity's "
-              f"documented batchCount maximum of 50; the pipeline may reject it at run time.")
+def set_wave_runner_batch_count(workspace_id, new_batch_count):
+    """Fetch pl_Task_Wave_Runner_Parallel's own item definition, set its
+    "ForEach Task Parallel" activity's batchCount to new_batch_count, and push
+    the edited definition back. Returns (old_batch_count, item_id).
 
-    workspace_id = current_workspace_id or spark.conf.get("trident.workspace.id")
-    item_id = get_item_id(workspace_id, pipeline_name, item_type="DataPipeline")
+    batchCount has no dynamic-expression form in Fabric/ADF pipelines -- it's a
+    plain design-time int -- so this is the only way to change it short of
+    hand-editing the pipeline in the portal every time."""
+    item_id = get_item_id(workspace_id, WAVE_RUNNER_PARALLEL_NAME, item_type="DataPipeline")
     if item_id is None:
-        raise ValueError(f"Pipeline {pipeline_name!r} not found in workspace {workspace_id}")
+        raise RuntimeError(
+            f"Couldn't find a DataPipeline named {WAVE_RUNNER_PARALLEL_NAME!r} in workspace {workspace_id!r}"
+        )
 
-    parts = get_item_definition(workspace_id, item_id)
-    updated_parts = set_foreach_batch_count(parts, new_batch_count)
-    update_item_definition(workspace_id, item_id, updated_parts)
-    print(f"{pipeline_name}: ForEach batchCount set to {new_batch_count}")
+    definition = _fabric_post_lro(f"/workspaces/{workspace_id}/items/{item_id}/getDefinition")
+    parts = definition["definition"]["parts"]
+    content_part = next(p for p in parts if p["path"] == "pipeline-content.json")
+    pipeline_json = json.loads(base64.b64decode(content_part["payload"]).decode("utf-8"))
+
+    def find_foreach(obj):
+        if isinstance(obj, dict):
+            if obj.get("name") == FOREACH_ACTIVITY_NAME and obj.get("type") == "ForEach":
+                return obj
+            for v in obj.values():
+                found = find_foreach(v)
+                if found is not None:
+                    return found
+        elif isinstance(obj, list):
+            for item in obj:
+                found = find_foreach(item)
+                if found is not None:
+                    return found
+        return None
+
+    foreach_activity = find_foreach(pipeline_json)
+    if foreach_activity is None:
+        raise RuntimeError(
+            f"Couldn't find a ForEach activity named {FOREACH_ACTIVITY_NAME!r} in {WAVE_RUNNER_PARALLEL_NAME}'s "
+            "definition -- has it been renamed?"
+        )
+
+    old_batch_count = foreach_activity["typeProperties"]["batchCount"]
+    if old_batch_count == new_batch_count:
+        print(f"{WAVE_RUNNER_PARALLEL_NAME}: batchCount already {new_batch_count}, nothing to push.")
+        return old_batch_count, item_id
+
+    foreach_activity["typeProperties"]["batchCount"] = new_batch_count
+    content_part["payload"] = base64.b64encode(json.dumps(pipeline_json, indent=2).encode("utf-8")).decode("ascii")
+
+    _fabric_post_lro(
+        f"/workspaces/{workspace_id}/items/{item_id}/updateDefinition",
+        body={"definition": {"parts": parts}},
+    )
+    return old_batch_count, item_id
 
 
 # METADATA ********************
@@ -238,9 +278,58 @@ def reset_parallel_batch_limit(pipeline_name, new_batch_count, current_workspace
 
 # CELL ********************
 
-# The wave-runner pipeline this notebook patches -- a fixed part of the
-# CentralHub framework, always in this same workspace.
-PARALLEL_WAVE_RUNNER_PIPELINE = "pl_Task_Wave_Runner_Parallel"
+import pyodbc
+
+# db_Metadata's own Fabric SQL endpoint (same database this framework's orch/log
+# schemas live in) -- same connection convention as nb_RefreshObjectIDs /
+# nb_db_Metadata_and_Excel_Sync.
+DB_METADATA_SERVER = "kalwvg5capkefegg5d6gkpgeza-f62dpkihcteudnn7gmui3r7wb4.database.fabric.microsoft.com,1433"
+DB_METADATA_DATABASE = "db_Metadata-15a01d6c-0d70-4a2d-b4da-28b809849709"
+ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
+SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+def connect_to_db_metadata():
+    token = _get_pbi_token().encode("UTF-16-LE")
+    token_struct = struct.pack(f"<I{len(token)}s", len(token), token)
+    connstr = (
+        f"Driver={{{ODBC_DRIVER}}};"
+        f"Server=tcp:{DB_METADATA_SERVER};"
+        f"Database={DB_METADATA_DATABASE};"
+        f"Encrypt=yes;TrustServerCertificate=no;"
+    )
+    return pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+
+def clear_update_parallel_batch_limit(job_name):
+    """One-shot flag: this Job asked for its current ParallelBatchLimit to be
+    applied to the wave runner's batchCount, we just did that, so clear the
+    request rather than re-patching the pipeline with the same value on every
+    future run of this Job."""
+    conn = connect_to_db_metadata()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE orch.Jobs SET UpdateParallelBatchLimit = 0 WHERE JobName = ?",
+            [job_name],
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise RuntimeError(f"No orch.Jobs row found for JobName={job_name!r} -- nothing was cleared.")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+if not JobName:
+    raise ValueError("JobName parameter is required -- pl_Orchestrator_Top_Level should always pass it.")
 
 _current_workspace_id = None
 try:
@@ -248,11 +337,15 @@ try:
 except Exception:
     pass  # not running in a Fabric Spark session (e.g. a local syntax check)
 
-reset_parallel_batch_limit(
-    PARALLEL_WAVE_RUNNER_PIPELINE,
-    ParallelBatchLimit,
-    current_workspace_id=_current_workspace_id,
-)
+if _current_workspace_id is None:
+    raise RuntimeError("Couldn't resolve the current workspace id (spark.conf 'trident.workspace.id') -- "
+                       "are we actually running inside a Fabric Spark session?")
+
+old_batch_count, wave_runner_item_id = set_wave_runner_batch_count(_current_workspace_id, ParallelBatchLimit)
+clear_update_parallel_batch_limit(JobName)
+
+print(f"{JobName}: {WAVE_RUNNER_PARALLEL_NAME}.{FOREACH_ACTIVITY_NAME}.batchCount {old_batch_count} -> "
+      f"{ParallelBatchLimit}; orch.Jobs.UpdateParallelBatchLimit cleared to 0.")
 
 
 # METADATA ********************
@@ -265,13 +358,19 @@ reset_parallel_batch_limit(
 # MARKDOWN ********************
 
 # ## Deployment
-# # 1. Import this notebook into the workspace (**New item -> Import notebook**),
-#    or let it arrive via the Git sync that carries this file in.
+#
+# 1. Import this notebook into the workspace (**New item -> Import notebook**).
 # 2. Grab its notebook ID (from the URL, or the Fabric REST API) and put it in
-#    the `Reset Parallel Batch Limit` activity added to `pl_Orchestrator_Top_Level`
-#    (currently a placeholder string, `PLACEHOLDER-REPLACE-WITH-nb_Reset_ParallelBatchLimit-OBJECT-ID`
-#    -- see that pipeline's change notes). The workspace ID is already filled
-#    in, since this notebook always lives in the same CentralHub workspace.
-# 3. Optionally add a row for this notebook itself to `orch.ObjectIDs` so it's
-#    tracked the same way as everything else, in case something later invokes
-#    it as a Task too.
+#    `pl_Orchestrator_Top_Level`'s "Reset Parallel Batch Limit" activity, replacing
+#    the placeholder `notebookId` (same step as was done for `nb_RefreshObjectIDs`'s
+#    "Refresh Object IDs" activity).
+# 3. Add a `JobName` parameter to that same activity (`@pipeline().parameters.JobName`,
+#    type String) -- it isn't there yet; this notebook needs it to know which
+#    `orch.Jobs` row to clear.
+# 4. Confirm the pipeline's run-as identity has Contributor (not just Viewer) on
+#    this workspace -- `updateDefinition` needs write access to the
+#    `pl_Task_Wave_Runner_Parallel` item, which is more than `nb_RefreshObjectIDs`
+#    needs.
+# 5. Until this is imported and wired in, leave `orch.Jobs.UpdateParallelBatchLimit`
+#    at 0 for every Job -- the activity still has a placeholder `notebookId` and
+#    will fail immediately if it fires.

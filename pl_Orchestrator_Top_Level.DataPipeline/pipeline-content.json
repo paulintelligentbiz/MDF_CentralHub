@@ -117,6 +117,10 @@
                 "notebookId": "PLACEHOLDER-REPLACE-WITH-nb_Reset_ParallelBatchLimit-OBJECT-ID",
                 "workspaceId": "a937b42f-1407-41c9-b5bf-33288dc7f60f",
                 "parameters": {
+                  "JobName": {
+                    "value": "@pipeline().parameters.JobName",
+                    "type": "string"
+                  },
                   "ParallelBatchLimit": {
                     "value": "@activity('Get Job Info').output.firstRow.ParallelBatchLimit",
                     "type": "int"

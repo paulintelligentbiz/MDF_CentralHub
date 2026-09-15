@@ -3,10 +3,10 @@
   "metadata": {
     "type": "Notebook",
     "displayName": "nb_Reset_ParallelBatchLimit",
-    "description": "Sets pl_Task_Wave_Runner_Parallel's ForEach batchCount from a job's orch.Jobs.ParallelBatchLimit value"
+    "description": "New notebook"
   },
   "config": {
     "version": "2.0",
-    "logicalId": "31999007-8a2a-4f92-84e4-41b2494b66d3"
+    "logicalId": "73e421b8-01da-4be5-944b-21149e957933"
   }
 }
