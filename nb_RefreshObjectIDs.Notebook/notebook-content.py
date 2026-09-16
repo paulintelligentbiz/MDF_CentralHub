@@ -195,22 +195,44 @@ def get_fabric_object_id(workspace_name, object_name=None, item_type=None, curre
 
 import pyodbc
 
-# db_Metadata's own Fabric SQL endpoint (same database this framework's orch/log
-# schemas live in).
-DB_METADATA_SERVER = "kalwvg5capkefegg5d6gkpgeza-f62dpkihcteudnn7gmui3r7wb4.database.fabric.microsoft.com,1433"
-DB_METADATA_DATABASE = "db_Metadata-15a01d6c-0d70-4a2d-b4da-28b809849709"
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 SQL_COPT_SS_ACCESS_TOKEN = 1256
 
-def connect_to_db_metadata():
+def _resolve_db_metadata_connection(current_workspace_id, database_name="db_Metadata"):
+    """db_Metadata's live server/database for whichever workspace this
+    notebook is actually running in, via the Fabric REST API -- this used to
+    be a hardcoded server/database naming one specific workspace's copy (see
+    this notebook's own Deployment notes below, written against Wave MDF
+    CentralHub), which produced a SQL login failure ("Verify the user has the
+    Read item permission") whenever this ran from any other workspace,
+    including pl_Orchestrator_Top_Level's "Refresh Object IDs" activity here."""
+    if not current_workspace_id:
+        raise RuntimeError(
+            "connect_to_db_metadata() needs current_workspace_id to resolve "
+            "db_Metadata's connection -- pass through spark.conf.get('trident.workspace.id')."
+        )
+    matches = [
+        db for db in _fabric_get(f"/workspaces/{current_workspace_id}/sqlDatabases")
+        if db.get("displayName") == database_name
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SQL database named '{database_name}' in "
+            f"workspace {current_workspace_id}, found {len(matches)}."
+        )
+    props = matches[0]["properties"]
+    return props["serverFqdn"], props["databaseName"]
+
+def connect_to_db_metadata(current_workspace_id):
     """pyodbc connection to db_Metadata using the notebook's own Entra token --
     no interactive sign-in, safe to run unattended from a pipeline."""
+    server, database = _resolve_db_metadata_connection(current_workspace_id)
     token = _get_pbi_token().encode("UTF-16-LE")
     token_struct = struct.pack(f"<I{len(token)}s", len(token), token)
     connstr = (
         f"Driver={{{ODBC_DRIVER}}};"
-        f"Server=tcp:{DB_METADATA_SERVER};"
-        f"Database={DB_METADATA_DATABASE};"
+        f"Server=tcp:{server};"
+        f"Database={database};"
         f"Encrypt=yes;TrustServerCertificate=no;"
     )
     return pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
@@ -300,7 +322,7 @@ def refresh_object_ids(current_workspace_id=None, only_workspace_name=None):
     WorkspaceName/ObjectName that doesn't match anything actually deployed --
     that's a metadata bug worth stopping the run over, not a transient
     condition worth retrying past."""
-    conn = connect_to_db_metadata()
+    conn = connect_to_db_metadata(current_workspace_id)
     try:
         refs = discover_object_refs(conn, only_workspace_name=only_workspace_name)
         resolved = 0

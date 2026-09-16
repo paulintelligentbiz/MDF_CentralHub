@@ -36,6 +36,8 @@ One row per orchestrated Job — a top-level unit of work (e.g., a "wave" of rel
 
 A new lookup procedure, `orch.spGetJob`, returns a Job's full row by `JobName` — `pl_Orchestrator_Top_Level` calls it at the start of a run so it can read `LoggingLevel` and pass it into `log.spLogJobRunEvent`, rather than logging always at the default level.
 
+**Renaming a Job:** `orch.spRenameJob @OldJobName, @NewJobName` — `JobName` is a clustered PK with `NO ACTION` foreign keys pointing at it, so it can't be renamed with a plain `UPDATE` while `Tasks`/`JobDependencies` rows still reference the old value. The proc inserts a new `Jobs` row under the new name, repoints `Tasks.JobName`, both sides of `JobDependencies`, and any other Job's JSON-array `Dependencies` that names the old value, updates the denormalized `JobName` in `log.RunLog`/`log.JobRunEvent`/`log.TaskRunEvent` for run-history continuity, then deletes the old row — all inside one transaction. Throws if `@OldJobName` doesn't exist or `@NewJobName` is already taken.
+
 ### orch.Tasks
 
 One row per individual unit of work (a Task) belonging to a Job — e.g., a single notebook invocation copying one source table. This is the work list `orch.spGetNextWave` reads to determine what's ready to run next, based on each task's declared `Dependencies`.
@@ -61,6 +63,8 @@ One row per individual unit of work (a Task) belonging to a Job — e.g., a sing
 **Constraints:** `PRIMARY KEY CLUSTERED (TaskName)`; `FK_Tasks_Job FOREIGN KEY (JobName) REFERENCES orch.Jobs`; `FK_Tasks_LoggingLevel FOREIGN KEY (LoggingLevel) REFERENCES log.LoggingLevel`; `FK_Tasks_TaskType FOREIGN KEY (TaskType) REFERENCES orch.TaskType`; `FK_Tasks_ObjectIDs_Job FOREIGN KEY (WorkspaceName, JobName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`; `FK_Tasks_ObjectIDs_Object FOREIGN KEY (WorkspaceName, ObjectName) REFERENCES orch.ObjectIDs (WorkspaceName, ObjectName)`. (A duplicate of the last constraint, previously tracked under the stray name `FK_Tasks_ObjectIDs_ObjectName`, has been removed.)
 
 `orch.spGetNextWave` already selects each ready task's `LoggingLevel` into `TasksJson`; the two Wave Runner pipelines now forward `item().LoggingLevel` into `pl_Task_Executor` as a pipeline parameter, which passes it into every `log.spLogTaskRunEvent`/`log.spLogActivityRunEvent` call for that task.
+
+**Renaming a Task:** `orch.spRenameTask @OldTaskName, @NewTaskName` — same pattern as `orch.spRenameJob`. `TaskName` is a clustered PK with `NO ACTION` foreign keys pointing at it (`TaskWatermark`, `TaskDependencies`), so the proc inserts a new `Tasks` row under the new name first; only once that row exists can `TaskWatermark.TaskName` (itself both PK and FK) be `UPDATE`d in place. It then repoints both sides of `TaskDependencies`, any other Task's JSON-array `Dependencies` that names the old value, updates the denormalized `TaskName` in `log.RunLog`/`log.TaskRunEvent`/`log.ActivityRunEvent`, then deletes the old row — all inside one transaction. Throws if `@OldTaskName` doesn't exist or `@NewTaskName` is already taken.
 
 ### orch.TaskWatermark
 
@@ -92,7 +96,7 @@ Small lookup table enumerating the valid kinds of Task and whether that kind may
 | TaskType | VARCHAR(50) NOT NULL | **Primary key.** Name of the task type (e.g., `Notebook`). *(Changed from `NVARCHAR(50)` to `VARCHAR(50)`.)* |
 | AllowParallel | BIT NOT NULL (default 1) | Whether tasks of this type may execute concurrently with other ready tasks in the same wave, or must run one at a time — checked by `spGetNextWave` to decide the wave's overall execution mode. |
 
-**Current data** (from `orch_metadata.xlsx`, last pulled from the database): one row — `Notebook`, `AllowParallel = True`.
+**Current data:** `orch_metadata.xlsx` (as of the last pull recorded above) has one row — `Notebook`, `AllowParallel = True`. **Provenance gap:** at least one deployed database (`DMI Sensing CentralHub DEV`) additionally has `CopyJob`, `StoredProcedure`, `Dataflow`, and `Pipeline` rows (all `AllowParallel = 1`) seeded directly via script, inferred from `pl_Task_Executor`'s `Switch On Task Type` cases rather than pulled from the workbook — these have **not** been reconciled with `orch_metadata.xlsx` and may not reflect what that sheet considers authoritative. Worth a `CompareSQLAndExcel` run before trusting this table's contents across environments.
 
 ### orch.ObjectIDs
 
@@ -291,7 +295,7 @@ Small lookup table enumerating valid logging verbosity levels, referenced by `or
 | LoggingLevel | TINYINT NOT NULL | **Primary key.** Numeric verbosity level. |
 | LoggingLevelName | NVARCHAR(20) NOT NULL | Human-readable name for the level. |
 
-**Note:** this table's seed rows (the actual level numbers and names in use) aren't tracked in the git-synced SQL project or in `orch_metadata.xlsx` — they exist only live in the database. Worth a live query if you want the actual defined levels documented here too.
+**Note:** this table's seed rows (the actual level numbers and names in use) aren't tracked in the git-synced SQL project or in `orch_metadata.xlsx` — they exist only live in each deployed database, and different deployments are not guaranteed to agree. `DMI Sensing CentralHub DEV`'s copy was seeded directly via script this session with `0=None, 1=Info, 2=Warning, 3=Error, 4=Debug` — a reasonable-default guess, not pulled from any authoritative source. Worth confirming against whatever levels the rest of the team's tooling actually expects before relying on these names elsewhere.
 
 ---
 

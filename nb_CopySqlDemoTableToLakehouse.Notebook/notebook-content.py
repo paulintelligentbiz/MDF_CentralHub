@@ -10,9 +10,14 @@
 
 # MARKDOWN ********************
 
-# # nb_CopyTableToLakehouse
-# 
-# Generic, parameterized MDF task notebook: copies one source table into a
+# # nb_CopySqlDemoTableToLakehouse
+# # Duplicate of `nb_CopyTableToLakehouse`, authenticating to the source
+# database with a dedicated SQL login (`DemoUser`) instead of an AAD token.
+# Created as a separate notebook rather than changing `nb_CopyTableToLakehouse`
+# in place, so `orch.Tasks` rows can be repointed at this one deliberately
+# (per-Task `ObjectName`) instead of silently changing behavior for every
+# existing Task that already points at the original.
+# # Generic, parameterized MDF task notebook: copies one source table into a
 # Bronze Delta table in whatever lakehouse the Task points it at. Invoked by
 # `pl_Task_Executor` for any `orch.Tasks` row with `TaskType = "Notebook"`
 # and `ObjectName` pointing at this notebook; `ParametersJson` supplies the
@@ -21,33 +26,32 @@
 # the notebook itself (no lakehouse needs to be attached here), matching the
 # Wave Runner MDF framework's design: every source and destination is data
 # in the Tasks table, not notebook configuration.
-# 
-# **One-time setup before this will run:**
-# 1. The identity this notebook runs as (your account for manual testing; the
-#    pipeline's identity once scheduled) needs write access to whatever
+# # **One-time setup before this will run:**
+# 1. The identity this notebook runs as needs write access to whatever
 #    destination lakehouse(s) the Tasks you run point it at -- there's no
 #    attached-lakehouse shortcut, so that access has to exist explicitly.
-# 2. That same identity needs an AAD-based login/user on the source database
-#    (`ContosoDW-DEV`) -- `CREATE USER [...] FROM EXTERNAL PROVIDER` there, with
-#    read access to whatever tables the Tasks you run point it at.
+# 2. The source database (`ContosoDW-DEV` on `paulsdemos.database.windows.net`)
+#    needs the `DemoUser` SQL login/user already created there, with read
+#    access to whatever tables the Tasks you run point it at
+#    (`CREATE USER DemoUser WITH PASSWORD = '...'; ALTER ROLE db_datareader
+#    ADD MEMBER DemoUser;`).
 # 3. Make sure `pyodbc` and the **ODBC Driver 18 for SQL Server** are available in the
 #    attached environment (`%pip install pyodbc` in a cell if needed).
 # 4. `pl_Task_Executor`'s `Run Notebook` activity needs to forward `ParametersJson` as
 #    a base parameter (see the accompanying pipeline fix) so this notebook actually
 #    receives the table name at runtime.
-# 
-# **Auth note:** connects with an AAD access token for whatever identity this
-# notebook is running as (your account manually; the pipeline's run-as identity
-# when scheduled) -- same pattern `nb_RefreshObjectIDs` uses for `db_Metadata`,
-# via `notebookutils.credentials.getToken(...)`, no interactive sign-in and no
-# stored secret. POC-only shortcut: that identity still needs an AAD-based login
-# on `ContosoDW-DEV` itself (`CREATE USER [...] FROM EXTERNAL PROVIDER` there,
-# with the needed grants) -- this doesn't create that, it only avoids a
-# browser prompt or a secret to present at connect time. (Previously used
-# `Authentication=Active Directory Interactive`, which opens a browser sign-in --
-# fine running this manually, but it just hangs waiting for a sign-in nobody is
-# there to complete when invoked unattended from a pipeline, failing with a
-# login timeout.)
+# # **Auth note:** connects with a SQL Server login (`DemoUser`), password
+# embedded below in plain text -- a deliberate demo/POC shortcut for this
+# sandbox source (`ContosoDW-DEV`), not a pattern to reuse against anything
+# real. Because the password lives in this file, it's in git history the
+# moment this notebook is committed; rotate the password (or move this to
+# Key Vault / a Fabric connection with a stored credential) before this
+# notebook -- or its git history -- is ever shared beyond this sandbox.
+# `nb_CopyTableToLakehouse` (the notebook this was duplicated from) instead
+# authenticates via an AAD access token for whatever identity it runs as, via
+# `notebookutils.credentials.getToken(...)` -- no interactive sign-in and no
+# stored secret, but it requires that identity to already have its own
+# AAD-based login on the source database.
 
 
 # PARAMETERS CELL ********************
@@ -143,30 +147,27 @@ else:
 
 # CELL ********************
 
-import struct
+# Dedicated SQL login for this sandbox source -- demo/POC shortcut. The
+# password lives here in plain text, which means it's in git history the
+# moment this notebook is committed; rotate it (or move this to Key Vault /
+# a Fabric connection with a stored credential) before sharing this notebook
+# or its history beyond this sandbox.
+SOURCE_SQL_USERNAME = "DemoUser"
+SOURCE_SQL_PASSWORD = "P@ssw0rd!1"
 
-try:
-    from notebookutils import credentials as _nb_credentials
-except ImportError:
-    _nb_credentials = None  # allows py_compile / unit tests outside a Fabric runtime
-
-SQL_COPT_SS_ACCESS_TOKEN = 1256
-
-def connect_with_aad_token(server, database, driver=ODBC_DRIVER):
-    """AAD-token connection: authenticates as whatever identity this notebook
-    is running as, with no interactive prompt and no stored secret -- POC
-    shortcut, not a substitute for a real service-principal/MSI setup once
-    this moves past manual testing. Requires that identity to already have an
-    AAD-based login/user on the target Azure SQL database."""
-    token = _nb_credentials.getToken("https://database.windows.net/").encode("UTF-16-LE")
-    token_struct = struct.pack(f"<I{len(token)}s", len(token), token)
+def connect_with_sql_auth(server, database, username, password, driver=ODBC_DRIVER):
+    """SQL Server authentication connection using a dedicated login -- no AAD
+    token, no interactive prompt. Requires that login to already exist on the
+    target database with the needed grants (see the setup notes above)."""
     connstr = (
         f"Driver={{{driver}}};"
         f"Server=tcp:{server},1433;"
         f"Database={database};"
+        f"Uid={username};"
+        f"Pwd={password};"
         f"Encrypt=yes;TrustServerCertificate=no;"
     )
-    return pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+    return pyodbc.connect(connstr)
 
 
 # METADATA ********************
@@ -187,7 +188,7 @@ import pyodbc
 # hierarchyid) before the read, so this notebook can still land the table.
 UDT_TYPES = {"geography", "geometry", "hierarchyid"}
 
-with connect_with_aad_token(SOURCE_SERVER, SOURCE_DATABASE) as conn:
+with connect_with_sql_auth(SOURCE_SERVER, SOURCE_DATABASE, SOURCE_SQL_USERNAME, SOURCE_SQL_PASSWORD) as conn:
     cols_df = pd.read_sql(
         "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
         "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
@@ -307,9 +308,10 @@ if WATERMARK_COLUMN is not None:
 # MARKDOWN ********************
 
 # ## Next steps
-# 
-# - Register this notebook once in `orch.ObjectIDs` (WorkspaceName/ObjectName -> its
-#   real notebook ID + workspace ID, from the Fabric portal after import).
+# # - Register this notebook once in `orch.ObjectIDs` (WorkspaceName/ObjectName -> its
+#   real notebook ID + workspace ID) -- or, since `nb_RefreshObjectIDs` now derives
+#   `orch.ObjectIDs` automatically from whatever `orch.Tasks` references, just make
+#   sure at least one `orch.Tasks` row's `ObjectName` points at this notebook.
 # - One `orch.Tasks` row per source table, all with the same `ObjectName` (this
 #   notebook), each with its own `ParametersJson`
 #   (`{"sourceSchema":"dbo","sourceTable":"...","destWorkspaceId":"...","destLakehouseId":"...","destSchema":"dbo"}`) --
@@ -335,4 +337,5 @@ if WATERMARK_COLUMN is not None:
 #   advancing it incrementally, so a later run switched back to `Append` resumes correctly.
 # - Upsert follow-up: `MERGE` on write, for sources where a previously-seen key can
 #   reappear with a newer watermark value instead of always being a new row.
-
+# - Rotate `SOURCE_SQL_PASSWORD` (and update it here) if this notebook or its git
+#   history is ever exposed beyond this sandbox.

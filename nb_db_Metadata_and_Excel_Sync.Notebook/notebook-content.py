@@ -83,6 +83,8 @@ import datetime as dt
 import struct
 
 import pyodbc
+import requests
+import notebookutils
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import range_boundaries
@@ -91,14 +93,29 @@ from openpyxl.utils.cell import range_boundaries
 # Auth is handled non-interactively via get_connection() (Fabric notebook
 # identity token), not via an Authentication= keyword here -- the notebook
 # runs headless, so an interactive browser sign-in prompt would just hang.
-DEFAULT_CONNECTION_STRING = (
-    "Data Source=kalwvg5capkefegg5d6gkpgeza-f62dpkihcteudnn7gmui3r7wb4.database.fabric.microsoft.com,1433;"
-    "Initial Catalog=db_Metadata-15a01d6c-0d70-4a2d-b4da-28b809849709;"
-    "Multiple Active Result Sets=False;"
-    "Connect Timeout=30;"
-    "Encrypt=True;"
-    "Trust Server Certificate=False;"
-)
+#
+# Resolved dynamically against whichever workspace this notebook is actually
+# running in, via the Fabric REST API -- this used to be a hardcoded string
+# pointing at one specific workspace's db_Metadata (Wave MDF CentralHub's),
+# which silently cross-connected this notebook to the wrong database whenever
+# it ran anywhere else (e.g. when this same notebook was deployed into
+# DMI Sensing CentralHub DEV).
+def _resolve_default_connection_string(database_name="db_Metadata"):
+    workspace_id = notebookutils.runtime.context["currentWorkspaceId"]
+    token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")
+    resp = requests.get(
+        f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/sqlDatabases",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp.raise_for_status()
+    matches = [db for db in resp.json()["value"] if db["displayName"] == database_name]
+    if not matches:
+        raise RuntimeError(
+            f"No SQL database named '{database_name}' found in workspace {workspace_id}."
+        )
+    return matches[0]["properties"]["connectionString"]
+
+DEFAULT_CONNECTION_STRING = _resolve_default_connection_string()
 
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 WORKBOOK_PATH = "/lakehouse/default/Files/MetadataSyncFiles/orch_metadata.xlsx"
@@ -162,6 +179,47 @@ def get_connection(conn=None):
         connstr, autocommit=False,
         attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct},
     ), True
+
+
+def _resolve_object_ids(distinct_pairs):
+    """Resolve each (WorkspaceName, ObjectName) pair to its real Fabric
+    WorkspaceID/ObjectID via the REST API, by display name. Raises if a
+    workspace or object name doesn't resolve to exactly one match, rather
+    than silently writing a wrong/placeholder ID -- ObjectIDs is only ever
+    machine-derived (see SyncExcelToSQL), never hand-authored, so a bad
+    lookup here should stop the sync, not produce bad data downstream."""
+    token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    workspace_ids = {}
+    resolved = []
+    for workspace_name, object_name in distinct_pairs:
+        if workspace_name not in workspace_ids:
+            resp = requests.get("https://api.fabric.microsoft.com/v1/workspaces", headers=headers)
+            resp.raise_for_status()
+            matches = [w for w in resp.json()["value"] if w["displayName"] == workspace_name]
+            if len(matches) != 1:
+                raise RuntimeError(
+                    f"Expected exactly one workspace named '{workspace_name}', found {len(matches)}."
+                )
+            workspace_ids[workspace_name] = matches[0]["id"]
+        workspace_id = workspace_ids[workspace_name]
+
+        resp = requests.get(f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items", headers=headers)
+        resp.raise_for_status()
+        matches = [i for i in resp.json()["value"] if i["displayName"] == object_name]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"Expected exactly one item named '{object_name}' in workspace "
+                f"'{workspace_name}', found {len(matches)}."
+            )
+
+        resolved.append({
+            "WorkspaceName": workspace_name,
+            "ObjectName": object_name,
+            "ObjectID": matches[0]["id"],
+            "WorkspaceID": workspace_id,
+        })
+    return resolved
 
 
 # METADATA ********************
@@ -386,6 +444,16 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     the referencing table currently has rows), so this uses DELETE FROM with
     no WHERE clause in FK-safe child-first order instead -- same net effect.
 
+    orch.ObjectIDs is the one managed table not taken from its own sheet as
+    written: whatever's in the ObjectIDs sheet is ignored, and the sheet's
+    rows are replaced by fresh ones -- one per distinct (WorkspaceName,
+    ObjectName) pair actually referenced by Tasks, each resolved to its real
+    Fabric IDs live via the REST API (_resolve_object_ids). Hand-maintained
+    ObjectIDs rows drift silently (stale, missing, or -- as found the first
+    time this ran -- entirely empty while every Task still referenced a row
+    that was never added), so this table is now always machine-derived
+    instead, cleared and rebuilt on every sync.
+
     Because this unconditionally discards the database's current contents for
     every managed table, it refuses to run unless confirm=True.
 
@@ -421,6 +489,13 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
             for time_col in spec.get("time_columns", []):
                 row[time_col] = _normalize_time(row.get(time_col))
         parsed[spec["table"]] = rows
+
+    distinct_pairs = sorted({
+        (row.get("WorkspaceName"), row.get("ObjectName"))
+        for row in parsed["Tasks"]
+        if row.get("WorkspaceName") and row.get("ObjectName")
+    })
+    parsed["ObjectIDs"] = _resolve_object_ids(distinct_pairs)
 
     db_conn, owns_conn = get_connection(conn)
     summary = {}
