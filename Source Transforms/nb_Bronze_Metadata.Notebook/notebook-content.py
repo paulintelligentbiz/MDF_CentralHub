@@ -8,12 +8,12 @@
 # META   },
 # META   "dependencies": {
 # META     "lakehouse": {
-# META       "default_lakehouse": "e5e6e605-c114-4d28-b79b-15b0d0196e4a",
-# META       "default_lakehouse_name": "lh_Bronze_Proto",
-# META       "default_lakehouse_workspace_id": "03539bd8-5c87-4267-b2bc-eefbcf50de5d",
+# META       "default_lakehouse": "a3614891-8c2c-4a33-a78d-7dfedea10306",
+# META       "default_lakehouse_name": "lh_Bronze",
+# META       "default_lakehouse_workspace_id": "22273b40-4352-4cd5-aa68-cfc1d0f100cc",
 # META       "known_lakehouses": [
 # META         {
-# META           "id": "e5e6e605-c114-4d28-b79b-15b0d0196e4a"
+# META           "id": "a3614891-8c2c-4a33-a78d-7dfedea10306"
 # META         }
 # META       ]
 # META     },
@@ -133,13 +133,13 @@ df_sources = spark.createDataFrame(
     [
         Row(
             Source_Name='altmetric',
-            API_Notebook='Bronze Altmetric',
+            API_Notebook='nb_Bronze_Altmetric',
             Base_URL='https://api.altmetric.com',
             Secret_Name='kvAltmetricAPIKey'
         ),
         Row(
             Source_Name='dimensions',
-            API_Notebook='Bronze Dimensions',
+            API_Notebook='nb_Bronze_Dimensions',
             Base_URL='https://app.dimensions.ai',
             Secret_Name='kvDimensionsAPIKey'
         ),
