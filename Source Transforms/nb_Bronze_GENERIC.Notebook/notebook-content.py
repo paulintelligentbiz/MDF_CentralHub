@@ -51,7 +51,7 @@ source_name = "altmetric"         #"dimensions", "talkwalker_engagements"
 
 # CELL ********************
 
-%run Global Imports
+%run nb_Global_Imports
 
 # METADATA ********************
 
@@ -62,7 +62,7 @@ source_name = "altmetric"         #"dimensions", "talkwalker_engagements"
 
 # CELL ********************
 
-%run Global Functions
+%run nb_Global_Functions
 
 # METADATA ********************
 
