@@ -68,10 +68,13 @@
 # were all dropped from the schema, so those columns are denormalized/unenforced
 # now, same convention as `ActivityRunEvent.TaskName` always was. The one
 # survivor is `orch.TaskWatermark.TaskName`, which still carries a real foreign
-# key into `orch.Tasks` (`EXTERNAL_FKS_TO_ORCH`) since `TaskWatermark` is an
-# `orch`-schema table, not `log`. `SyncExcelToSQL` temporarily disables that one
-# constraint around its delete+reinsert and re-validates it before committing,
-# so a Task can be replaced under the same name without a foreign key violation.
+# key into `orch.Tasks`. Rather than relaxing that constraint around the
+# delete+reinsert below, `SyncExcelToSQL` deletes every `orch.TaskWatermark` row
+# outright before deleting `Tasks`/`Jobs` -- a full resync wipes watermark
+# history for every Task, not just ones that were renamed/removed, but
+# `orch.spAdvanceTaskWatermark` now auto-seeds a fresh initial row the next time
+# each watermark-tracked Task runs, so this is a one-time reset per sync rather
+# than lost functionality.
 # If a Task was actually renamed or removed in Excel and `TaskWatermark` still
 # references the old name, that re-validation fails and the
 # whole sync rolls back -- clean up (or restore) the old name and retry.
@@ -295,27 +298,6 @@ TABLE_SPECS = [
     },
 ]
 
-# Foreign keys that reference orch.Jobs/orch.Tasks by name from tables this notebook does NOT
-# manage. A live database refuses to delete a Job/Task row while any of these still point at it,
-# even one about to be reinserted under the same name a moment later, since the DELETE happens
-# before the INSERT. SyncExcelToSQL disables each of these around its delete+reinsert and
-# re-validates them (WITH CHECK) before committing -- see SyncExcelToSQL's docstring.
-#
-# No table in the log schema should hold a hard FK into orch that could block deleting or
-# renaming an orch.Jobs/orch.Tasks row -- log.JobRunEvent.JobName, log.TaskRunEvent.JobName, and
-# log.TaskRunEvent.TaskName were all FK-enforced this way at one point; all three constraints
-# (FK_JobRunEvent_JobName, FK_TaskRunEvent_JobName, FK_TaskRunEvent_TaskName) have since been
-# dropped from the schema, so those columns are now denormalized/unenforced, same convention as
-# ActivityRunEvent.TaskName always was. log schema is FK-clean into orch as of this rewrite.
-#
-# orch.TaskWatermark is the one survivor -- it's an orch-schema table (not log), so it's outside
-# that rule, and its FK_TaskWatermark_Task into orch.Tasks is still real and still needs relaxing
-# here since this notebook doesn't manage TaskWatermark either.
-EXTERNAL_FKS_TO_ORCH = [
-    ("orch", "TaskWatermark", "FK_TaskWatermark_Task"),
-]
-
-
 # METADATA ********************
 
 # META {
@@ -462,15 +444,14 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     were all dropped -- those columns are now denormalized/unenforced, same
     convention as ActivityRunEvent.TaskName always was), so log-schema history
     never blocks this function's deletes. orch.TaskWatermark is the one
-    remaining external FK: it isn't managed by this notebook (see the notes at
-    the top) but still has a real foreign key into orch.Tasks by TaskName --
-    see EXTERNAL_FKS_TO_ORCH. That constraint is disabled for the duration of
-    the delete+reinsert below and re-validated (WITH CHECK) right before
-    commit. If a Task was renamed or removed in Excel and TaskWatermark still
-    has rows referencing the old name, that re-validation fails and the whole
-    sync (data changes included) rolls back -- clean up or restore the
-    referenced name and retry, rather than the constraint being silently left
-    disabled or the old watermark data silently orphaned.
+    remaining external FK, and it isn't managed by this notebook (see the notes
+    at the top) -- rather than relaxing FK_TaskWatermark_Task around the
+    delete+reinsert below, every row in orch.TaskWatermark is deleted outright
+    before Tasks/Jobs, the same as if it were just another child table in
+    TABLE_SPECS. This wipes watermark history for every Task on every full
+    resync, not just ones renamed/removed in Excel -- orch.spAdvanceTaskWatermark
+    auto-seeds a fresh initial row the next time each watermark-tracked Task
+    runs, so this is a one-time reset rather than lost functionality.
     """
     if not confirm:
         raise ValueError(
@@ -502,13 +483,10 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
     try:
         cur = db_conn.cursor()
 
-        # Relax the external FKs (log run-history, orch.TaskWatermark) that point at
-        # orch.Jobs/orch.Tasks by name but aren't part of this notebook's own delete/insert
-        # order below -- otherwise a DELETE on Jobs/Tasks is refused outright while any
-        # history/watermark row still references it, even one about to reappear under the
-        # same name a few statements later.
-        for schema, table, fk in EXTERNAL_FKS_TO_ORCH:
-            cur.execute(f"ALTER TABLE [{schema}].[{table}] NOCHECK CONSTRAINT [{fk}]")
+        # orch.TaskWatermark isn't part of TABLE_SPECS (it's runtime state, not
+        # hand-authored metadata) but still carries a real FK_TaskWatermark_Task into
+        # orch.Tasks, so it has to be cleared before Tasks/Jobs are deleted below, not after.
+        cur.execute("DELETE FROM [orch].[TaskWatermark]")
 
         # Delete-all, child-first (reverse of TABLE_SPECS' parent-first order).
         for spec in reversed(TABLE_SPECS):
@@ -528,15 +506,6 @@ def SyncExcelToSQL(workbook_path=WORKBOOK_PATH, conn=None, confirm=False):
                 [[row.get(c) for c in cols] for row in rows],
             )
             summary[spec["table"]] = len(rows)
-
-        # Re-validate the relaxed FKs now that the replacement rows are in place (WITH CHECK
-        # forces SQL Server to actually scan for violations, not just re-arm the constraint
-        # untrusted). If a Job/Task got renamed or removed in Excel and a history/watermark row
-        # still points at the old name, this raises here -- caught below, which rolls back the
-        # whole transaction (data changes and constraint state both), rather than leaving
-        # orphaned history or a disabled constraint behind.
-        for schema, table, fk in EXTERNAL_FKS_TO_ORCH:
-            cur.execute(f"ALTER TABLE [{schema}].[{table}] WITH CHECK CHECK CONSTRAINT [{fk}]")
 
         db_conn.commit()
     except Exception:
