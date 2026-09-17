@@ -48,11 +48,11 @@
               "properties": {
                 "type": "FabricSqlDatabase",
                 "typeProperties": {
-                  "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
-                  "workspaceId": "00000000-0000-0000-0000-000000000000"
+                  "artifactId": "f3b52ea4-efab-4619-9f2f-0605a9a8fb0f",
+                  "workspaceId": "b02fe846-4992-48f9-ab2a-d46eae118816"
                 },
                 "externalReferences": {
-                  "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+                  "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
                 },
                 "annotations": []
               }
@@ -103,7 +103,7 @@
               "type": "ExecutePipeline",
               "typeProperties": {
                 "pipeline": {
-                  "referenceName": "0fdf1001-3550-a88b-4db1-b18341e13000",
+                  "referenceName": "c631c94b-3099-4b1f-a9ac-35f0e7c3acf2",
                   "type": "PipelineReference"
                 },
                 "parameters": {
@@ -112,7 +112,7 @@
                   "ObjectName": "@item().ObjectName",
                   "WorkspaceName": "@item().WorkspaceName",
                   "TaskType": "@item().TaskType",
-                  "ParametersJson": "@item().ParametersJson",
+                  "ParametersJson": "@coalesce(item().ParametersJson, '')",
                   "RunID": "@pipeline().parameters.RunID",
                   "ObjectID": "@item().ObjectID",
                   "WorkspaceID": "@item().WorkspaceID",
@@ -183,11 +183,11 @@
           "properties": {
             "type": "FabricSqlDatabase",
             "typeProperties": {
-              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
-              "workspaceId": "00000000-0000-0000-0000-000000000000"
+              "artifactId": "f3b52ea4-efab-4619-9f2f-0605a9a8fb0f",
+              "workspaceId": "b02fe846-4992-48f9-ab2a-d46eae118816"
             },
             "externalReferences": {
-              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
             },
             "annotations": []
           }
@@ -260,11 +260,11 @@
           "properties": {
             "type": "FabricSqlDatabase",
             "typeProperties": {
-              "artifactId": "09849709-28b8-b4da-4a2d-0d7015a01d6c",
-              "workspaceId": "00000000-0000-0000-0000-000000000000"
+              "artifactId": "f3b52ea4-efab-4619-9f2f-0605a9a8fb0f",
+              "workspaceId": "b02fe846-4992-48f9-ab2a-d46eae118816"
             },
             "externalReferences": {
-              "connection": "a6f55cb9-f9a5-4f45-89e6-7d93abc328b8"
+              "connection": "5c594882-05d6-4143-abc5-83c5bfaf8e41"
             },
             "annotations": []
           }

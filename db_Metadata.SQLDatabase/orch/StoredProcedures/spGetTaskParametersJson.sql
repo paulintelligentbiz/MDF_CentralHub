@@ -16,6 +16,15 @@ BEGIN
     -- would match multiple rows here, and this SELECT @var = ... FROM ... pattern silently
     -- applies once per matching row in an unspecified order instead of erroring, which would
     -- pick an arbitrary historical value rather than the current one.
+    --
+    -- A Task with no parameters at all can reach here as '' rather than NULL -- the wave-runner
+    -- pipelines coalesce a missing/null ParametersJson to '' before passing it through, since a
+    -- JSON null value doesn't survive a string-typed pipeline parameter reliably. JSON_MODIFY
+    -- throws on '' (not valid JSON) but safely passes NULL straight through unchanged, so
+    -- normalize '' to NULL here rather than have every caller guard against both.
+    IF LTRIM(RTRIM(ISNULL(@ParametersJson, ''))) = ''
+        SET @ParametersJson = NULL;
+
     DECLARE @Result nvarchar(max) = @ParametersJson;
 
     SELECT @Result = JSON_MODIFY(@Result, '$.updateOption', t.UpdateOption)
