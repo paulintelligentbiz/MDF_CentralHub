@@ -1,0 +1,33 @@
+flowchart TB
+    subgraph current["Current: sequential, shared session"]
+        direction TB
+        C1["nb_Bronze_Generic<br/>(top-level session)"] --> C2{"For each active topic<br/>(one at a time)"}
+        C2 --> C3["notebookutils.notebook.run(<br/>source_config.API_Notebook, ...)<br/>top-level call -> SAME session"]
+        C3 --> C4["Child notebook<br/>(e.g. nb_Bronze_Dimensions)<br/>calls API, builds global_temp views"]
+        C4 --> C5["nb_Bronze_Generic reads the<br/>global_temp views, appends to<br/>bronze.* Delta tables, drops views"]
+        C5 --> C2
+        C2 -->|"all topics processed"| C6["Done<br/>~30s x topic count, strictly serial"]
+    end
+
+    subgraph proposed["Proposed: parallel, isolated sessions"]
+        direction TB
+        P1["nb_Bronze_Generic<br/>(orchestrator only)"] --> P2["Build DAG of per-topic<br/>run requests from meta.bronze_topics"]
+        P2 --> P3["notebookutils.notebook.runMultiple(<br/>dag, concurrency = N)"]
+        P3 --> P4a["nb_Bronze_Dimensions<br/>Topic A (isolated session)"]
+        P3 --> P4b["nb_Bronze_Dimensions<br/>Topic B (isolated session)"]
+        P3 --> P4c["nb_Bronze_Dimensions<br/>Topic N (isolated session)"]
+        P4a --> P5a["Calls API, builds df,<br/>calls append_bronze_table itself,<br/>exits with new_offset only"]
+        P4b --> P5b["Calls API, builds df,<br/>calls append_bronze_table itself,<br/>exits with new_offset only"]
+        P4c --> P5c["Calls API, builds df,<br/>calls append_bronze_table itself,<br/>exits with new_offset only"]
+        P5a --> P6["nb_Bronze_Generic reads<br/>runMultiple's result dict,<br/>batch-updates meta.bronze_topics.Resume_Offset"]
+        P5b --> P6
+        P5c --> P6
+        P6 --> P7["Done<br/>bounded by slowest topic x (count / concurrency)"]
+    end
+
+    GF["nb_Global_Functions<br/>(shared append_bronze_table helper,<br/>%run by every source notebook)"] -.->|"called directly,<br/>in-session"| P4a
+    GF -.-> P4b
+    GF -.-> P4c
+
+    note1["Rate limiting: concurrency N must respect<br/>each source API's own limits -<br/>not modeled in meta.bronze_sources today"]
+    P3 -.- note1
