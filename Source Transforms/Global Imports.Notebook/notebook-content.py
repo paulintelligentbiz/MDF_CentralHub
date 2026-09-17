@@ -8,12 +8,12 @@
 # META   },
 # META   "dependencies": {
 # META     "lakehouse": {
-# META       "default_lakehouse": "e5e6e605-c114-4d28-b79b-15b0d0196e4a",
-# META       "default_lakehouse_name": "lh_Bronze_Proto",
-# META       "default_lakehouse_workspace_id": "03539bd8-5c87-4267-b2bc-eefbcf50de5d",
+# META       "default_lakehouse": "a3614891-8c2c-4a33-a78d-7dfedea10306",
+# META       "default_lakehouse_name": "lh_Bronze",
+# META       "default_lakehouse_workspace_id": "22273b40-4352-4cd5-aa68-cfc1d0f100cc",
 # META       "known_lakehouses": [
 # META         {
-# META           "id": "e5e6e605-c114-4d28-b79b-15b0d0196e4a"
+# META           "id": "a3614891-8c2c-4a33-a78d-7dfedea10306"
 # META         }
 # META       ]
 # META     },
@@ -95,8 +95,8 @@ date_path = f"{year}/{month}/{day}"
 
 # -- Fabric - Workspace / lakehouse configuration
 # Prefer GUIDs over names: they survive renames and avoid the space in "Sensing Test".
-WORKSPACE    = "Sensing Test"        # or the workspace GUID
-LAKEHOUSE    = "lh_Bronze_Proto"     # or the lakehouse item GUID
+WORKSPACE    = "22273b40-4352-4cd5-aa68-cfc1d0f100cc"  # DMI Sensing Data System DEV -- GUID (name has a space; also required below since .get() needs an actual ID, not a display name)
+LAKEHOUSE    = "lh_Bronze"     # or the lakehouse item GUID
 KEYVAULT_URL = "https://kvket05muw1dev-krsensing.vault.azure.net/"   # migrated Dev vault
 
 # -- Synapse - Data lake paths
@@ -111,7 +111,7 @@ KEYVAULT_URL = "https://kvket05muw1dev-krsensing.vault.azure.net/"   # migrated 
 # onelake     = f"abfss://{WORKSPACE}@onelake.dfs.fabric.microsoft.com/{LAKEHOUSE}.Lakehouse"
 # -- Fabric (GUID-based, space-safe): resolve the workspace + lakehouse GUIDs from the
 #    lakehouse name (which has no space) at runtime, so paths survive renames too.
-_lh = notebookutils.lakehouse.get(LAKEHOUSE)
+_lh = notebookutils.lakehouse.get(LAKEHOUSE, WORKSPACE)  # cross-workspace: this notebook now lives in a different workspace than lh_Bronze
 WORKSPACE_ID = _lh["workspaceId"]
 LAKEHOUSE_ID = _lh["id"]
 onelake     = (_lh.get("properties", {}) or {}).get("abfsPath") \
