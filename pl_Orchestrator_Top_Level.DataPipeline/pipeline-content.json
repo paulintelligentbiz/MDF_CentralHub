@@ -96,7 +96,7 @@
         "name": "Check Update Object IDs",
         "dependsOn": [
           {
-            "activity": "Get Job Info",
+            "activity": "Check Refresh Metadata",
             "dependencyConditions": [
               "Succeeded"
             ]
@@ -147,6 +147,44 @@
           "ifFalseActivities": []
         },
         "name": "Check Update Parallel Batch Limit",
+        "dependsOn": [
+          {
+            "activity": "Get Job Info",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "IfCondition",
+        "typeProperties": {
+          "expression": {
+            "value": "@equals(activity('Get Job Info').output.firstRow.RefreshMetadata, true)",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "type": "TridentNotebook",
+              "typeProperties": {
+                "notebookId": "b8272105-6955-4fb3-a506-1b6d7c2ef8a6",
+                "workspaceId": "00000000-0000-0000-0000-000000000000",
+                "parameters": {}
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "Refresh Metadata",
+              "dependsOn": []
+            }
+          ],
+          "ifFalseActivities": []
+        },
+        "name": "Check Refresh Metadata",
         "dependsOn": [
           {
             "activity": "Get Job Info",

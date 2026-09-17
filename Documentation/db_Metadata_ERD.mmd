@@ -4,6 +4,7 @@ erDiagram
         bit Include
         int TimeoutInSeconds
         int Retries
+        bit RefreshMetadata
         bit UpdateObjectIDs
         bit UpdateParallelBatchLimit
         int ParallelBatchLimit
@@ -20,14 +21,16 @@ erDiagram
         tinyint LoggingLevel FK
     }
     TaskWatermark {
-        varchar TaskName PK,FK
+        bigint TaskWatermarkId PK
+        varchar TaskName FK
         varchar WatermarkColumn
         varchar WatermarkDataType
         datetime2 WatermarkDateTimeValue
         decimal WatermarkNumericValue
         datetime2 PreviousWatermarkDateTimeValue
         decimal PreviousWatermarkNumericValue
-        datetime2 ModifiedUtc
+        bit IsCurrentWatermark
+        datetime2 RunDateTimeUtc
     }
     TaskType {
         varchar TaskType PK
@@ -97,7 +100,7 @@ erDiagram
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Job (WorkspaceName, JobName)"
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"
-    Tasks ||--o| TaskWatermark : "one row per watermark-tracked Task"
+    Tasks ||--o{ TaskWatermark : "history of watermark advances (0..1 current row)"
 
     Jobs ||--o{ JobDependencies : "JobName"
     JobDependencies }o--|| DependencyCondition : "DependsOn"

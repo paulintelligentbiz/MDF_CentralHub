@@ -10,6 +10,12 @@ BEGIN
     -- orch.TaskWatermark; a Task with no TaskWatermark row is a full load, so those two keys
     -- are left out and @ParametersJson otherwise comes back unchanged -- the caller
     -- (pl_Task_Executor) doesn't need to know which case it is.
+    --
+    -- orch.TaskWatermark is append-only (one row per past advance, not one row per Task), so
+    -- this must filter to IsCurrentWatermark = 1 -- without it, a Task with watermark history
+    -- would match multiple rows here, and this SELECT @var = ... FROM ... pattern silently
+    -- applies once per matching row in an unspecified order instead of erroring, which would
+    -- pick an arbitrary historical value rather than the current one.
     DECLARE @Result nvarchar(max) = @ParametersJson;
 
     SELECT @Result = JSON_MODIFY(@Result, '$.updateOption', t.UpdateOption)
@@ -26,7 +32,7 @@ BEGIN
                       END
                   )
     FROM orch.TaskWatermark tw
-    WHERE tw.TaskName = @TaskName;
+    WHERE tw.TaskName = @TaskName AND tw.IsCurrentWatermark = 1;
 
     SELECT @Result AS ParametersJson;
 END;

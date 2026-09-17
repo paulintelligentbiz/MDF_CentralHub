@@ -194,6 +194,19 @@ with connect_with_sql_auth(SOURCE_SERVER, SOURCE_DATABASE, SOURCE_SQL_USERNAME, 
         "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
         conn, params=[SOURCE_SCHEMA, SOURCE_TABLE],
     )
+    if cols_df.empty:
+        # Silently building "SELECT  FROM [schema].[table]" (empty column list)
+        # from zero INFORMATION_SCHEMA.COLUMNS rows produced a confusing SQL
+        # syntax error ("Incorrect syntax near the keyword 'FROM'") instead of
+        # a clear one, the first time a Task's sourceTable didn't match any
+        # real table -- either misspelled, in a different schema, or the
+        # connecting login lacks SELECT on it (INFORMATION_SCHEMA.COLUMNS only
+        # shows objects the current principal has permission on).
+        raise RuntimeError(
+            f"No columns found for [{SOURCE_SCHEMA}].[{SOURCE_TABLE}] in {SOURCE_DATABASE} -- "
+            "table doesn't exist under that exact schema/name, or "
+            f"{SOURCE_SQL_USERNAME} lacks SELECT permission on it."
+        )
     select_list = ", ".join(
         f"CONVERT(NVARCHAR(MAX), [{r.COLUMN_NAME}]) AS [{r.COLUMN_NAME}]"
         if r.DATA_TYPE in UDT_TYPES else f"[{r.COLUMN_NAME}]"

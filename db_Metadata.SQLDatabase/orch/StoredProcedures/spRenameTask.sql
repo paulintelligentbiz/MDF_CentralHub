@@ -30,9 +30,11 @@ BEGIN
         FROM orch.Tasks
         WHERE TaskName = @OldTaskName;
 
-        -- TaskWatermark.TaskName is itself both PK and FK to Tasks -- a plain UPDATE works
-        -- here (unlike Tasks itself) because the new Tasks row above already exists by the
-        -- time this runs, so the FK is satisfied throughout.
+        -- TaskWatermark.TaskName is an FK to Tasks (no longer also its PK -- the table is
+        -- append-only, keyed by its own TaskWatermarkId, so a Task can have many historical
+        -- rows here). A plain UPDATE works for all of them at once, same as Tasks itself
+        -- would if it weren't for the FK: the new Tasks row above already exists by the time
+        -- this runs, so the FK is satisfied throughout.
         UPDATE orch.TaskWatermark SET TaskName = @NewTaskName WHERE TaskName = @OldTaskName;
 
         UPDATE orch.TaskDependencies SET TaskName = @NewTaskName WHERE TaskName = @OldTaskName;
