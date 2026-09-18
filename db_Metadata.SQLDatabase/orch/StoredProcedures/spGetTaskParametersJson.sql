@@ -31,14 +31,12 @@ BEGIN
     FROM orch.Tasks t
     WHERE t.TaskName = @TaskName;
 
+    -- WatermarkValue is stored as plain text already (not a typed column -- see
+    -- orch.TaskWatermark), so this is a direct read with no per-WatermarkDataType conversion.
     SELECT
         @Result = JSON_MODIFY(
                       JSON_MODIFY(@Result, '$.watermarkColumn', tw.WatermarkColumn),
-                      '$.watermarkValue',
-                      CASE tw.WatermarkDataType
-                          WHEN 'DateTime' THEN CONVERT(varchar(33), tw.WatermarkDateTimeValue, 127)  -- ISO 8601, matches the notebook's isoformat() on write-back
-                          WHEN 'Numeric'  THEN CONVERT(varchar(50), tw.WatermarkNumericValue)
-                      END
+                      '$.watermarkValue', tw.WatermarkValue
                   )
     FROM orch.TaskWatermark tw
     WHERE tw.TaskName = @TaskName AND tw.IsCurrentWatermark = 1;

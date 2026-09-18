@@ -11,7 +11,11 @@ BEGIN
     IF @NotebookExitJson IS NULL OR LTRIM(RTRIM(@NotebookExitJson)) = ''
         RETURN;  -- not watermark-tracked -- no watermark to advance
 
-    DECLARE @NewWatermarkValue nvarchar(100) = JSON_VALUE(@NotebookExitJson, '$.newWatermarkValue');
+    -- Stored and read as plain text (orch.TaskWatermark.WatermarkValue is NVARCHAR, not a
+    -- typed column) -- WatermarkDataType is metadata about how to interpret/compare the value,
+    -- not something this proc converts through, since a 'Char' watermark isn't a date or a
+    -- number at all.
+    DECLARE @NewWatermarkValue nvarchar(200) = JSON_VALUE(@NotebookExitJson, '$.newWatermarkValue');
 
     IF @NewWatermarkValue IS NULL
         RETURN;  -- this run read 0 rows -- watermark stays where it was
@@ -34,14 +38,12 @@ BEGIN
     -- becomes this new row's Previous*.
     DECLARE @PriorWatermarkColumn   varchar(200),
             @PriorWatermarkDataType varchar(20),
-            @PriorDateTimeValue     datetime2(7),
-            @PriorNumericValue     decimal(38, 0);
+            @PriorWatermarkValue    nvarchar(200);
 
     SELECT TOP (1)
         @PriorWatermarkColumn = WatermarkColumn,
         @PriorWatermarkDataType = WatermarkDataType,
-        @PriorDateTimeValue = WatermarkDateTimeValue,
-        @PriorNumericValue = WatermarkNumericValue
+        @PriorWatermarkValue = WatermarkValue
     FROM orch.TaskWatermark
     WHERE TaskName = @TaskName
     ORDER BY RunDateTimeUtc DESC;
@@ -60,28 +62,27 @@ BEGIN
         IF @SeedWatermarkColumn IS NULL
             RETURN;  -- exit payload doesn't name a watermark column -- nothing to seed
 
-        -- The exit payload carries the raw new value but not its data type (that's normally
-        -- read back from the prior row, which doesn't exist yet here) -- infer it from
-        -- whichever supported type the value actually parses as, same two types
-        -- CK_TaskWatermark_WatermarkDataType allows.
+        -- The exit payload doesn't say which of orch.WatermarkDataType's values applies
+        -- (that's normally read back from the prior row, which doesn't exist yet here), so
+        -- infer it from whichever supported type the value actually parses as, DateTime
+        -- first, then Numeric -- anything that parses as neither defaults to 'Char' (always
+        -- succeeds, since a Char watermark accepts any text). This can misclassify a value
+        -- that's genuinely meant to be Char but happens to also look like a date or a number
+        -- (e.g. a purely numeric string cursor) -- if that matters for a given Task, seed its
+        -- first row manually instead of relying on this inference.
         DECLARE @SeedWatermarkDataType varchar(20) =
             CASE
                 WHEN TRY_CONVERT(datetime2(7), @NewWatermarkValue) IS NOT NULL THEN 'DateTime'
                 WHEN TRY_CONVERT(decimal(38, 0), @NewWatermarkValue) IS NOT NULL THEN 'Numeric'
+                ELSE 'Char'
             END;
 
-        IF @SeedWatermarkDataType IS NULL
-            RETURN;  -- newWatermarkValue doesn't parse as either supported type -- can't seed
-
         INSERT INTO orch.TaskWatermark (
-            TaskName, WatermarkColumn, WatermarkDataType,
-            WatermarkDateTimeValue, WatermarkNumericValue,
+            TaskName, WatermarkColumn, WatermarkDataType, WatermarkValue,
             IsCurrentWatermark, RunDateTimeUtc
         )
         VALUES (
-            @TaskName, @SeedWatermarkColumn, @SeedWatermarkDataType,
-            CASE WHEN @SeedWatermarkDataType = 'DateTime' THEN TRY_CONVERT(datetime2(7), @NewWatermarkValue) END,
-            CASE WHEN @SeedWatermarkDataType = 'Numeric'  THEN TRY_CONVERT(decimal(38, 0), @NewWatermarkValue) END,
+            @TaskName, @SeedWatermarkColumn, @SeedWatermarkDataType, @NewWatermarkValue,
             1, GETDATE()
         );
 
@@ -99,19 +100,15 @@ BEGIN
         WHERE TaskName = @TaskName AND IsCurrentWatermark = 1;
 
         INSERT INTO orch.TaskWatermark (
-            TaskName, WatermarkColumn, WatermarkDataType,
-            WatermarkDateTimeValue, WatermarkNumericValue,
-            PreviousWatermarkDateTimeValue, PreviousWatermarkNumericValue,
+            TaskName, WatermarkColumn, WatermarkDataType, WatermarkValue,
+            PreviousWatermarkValue,
             IsCurrentWatermark, RunDateTimeUtc
         )
         VALUES (
-            @TaskName, @PriorWatermarkColumn, @PriorWatermarkDataType,
-            CASE WHEN @PriorWatermarkDataType = 'DateTime' THEN TRY_CONVERT(datetime2(7), @NewWatermarkValue) END,
-            CASE WHEN @PriorWatermarkDataType = 'Numeric'  THEN TRY_CONVERT(decimal(38, 0), @NewWatermarkValue) END,
+            @TaskName, @PriorWatermarkColumn, @PriorWatermarkDataType, @NewWatermarkValue,
             -- Reset run: cleared to NULL, same as before -- the destination was just wiped and
             -- reloaded, so the old value no longer corresponds to anything recoverable.
-            CASE WHEN @ResetWatermark = 0 AND @PriorWatermarkDataType = 'DateTime' THEN @PriorDateTimeValue END,
-            CASE WHEN @ResetWatermark = 0 AND @PriorWatermarkDataType = 'Numeric'  THEN @PriorNumericValue END,
+            CASE WHEN @ResetWatermark = 0 THEN @PriorWatermarkValue END,
             1, GETDATE()
         );
 

@@ -24,13 +24,14 @@ erDiagram
         bigint TaskWatermarkId PK
         varchar TaskName FK
         varchar WatermarkColumn
-        varchar WatermarkDataType
-        datetime2 WatermarkDateTimeValue
-        decimal WatermarkNumericValue
-        datetime2 PreviousWatermarkDateTimeValue
-        decimal PreviousWatermarkNumericValue
+        varchar WatermarkDataType FK
+        nvarchar WatermarkValue
+        nvarchar PreviousWatermarkValue
         bit IsCurrentWatermark
         datetime2 RunDateTimeUtc
+    }
+    WatermarkDataType {
+        varchar WatermarkDataType PK
     }
     TaskType {
         varchar TaskType PK
@@ -101,6 +102,7 @@ erDiagram
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"
     Tasks ||--o{ TaskWatermark : "history of watermark advances (0..1 current row)"
+    TaskWatermark }o--|| WatermarkDataType : "WatermarkDataType"
 
     Jobs ||--o{ JobDependencies : "JobName"
     JobDependencies }o--|| DependencyCondition : "DependsOn"
