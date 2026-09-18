@@ -8,8 +8,10 @@ BEGIN
     -- Merges in updateOption (orch.Tasks.UpdateOption -- always present, so this always runs)
     -- and, when this Task has a row there, watermarkColumn/watermarkValue from
     -- orch.TaskWatermark; a Task with no TaskWatermark row is a full load, so those two keys
-    -- are left out and @ParametersJson otherwise comes back unchanged -- the caller
-    -- (pl_Task_Executor) doesn't need to know which case it is.
+    -- are left out. This always returns real JSON -- '{"updateOption":...}' at minimum, even
+    -- for a Task with no ParametersJson of its own -- never NULL, so the caller
+    -- (pl_Task_Executor) doesn't need to know which case it is, and neither does whatever
+    -- notebook eventually parses this.
     --
     -- orch.TaskWatermark is append-only (one row per past advance, not one row per Task), so
     -- this must filter to IsCurrentWatermark = 1 -- without it, a Task with watermark history
@@ -19,11 +21,14 @@ BEGIN
     --
     -- A Task with no parameters at all can reach here as '' rather than NULL -- the wave-runner
     -- pipelines coalesce a missing/null ParametersJson to '' before passing it through, since a
-    -- JSON null value doesn't survive a string-typed pipeline parameter reliably. JSON_MODIFY
-    -- throws on '' (not valid JSON) but safely passes NULL straight through unchanged, so
-    -- normalize '' to NULL here rather than have every caller guard against both.
+    -- JSON null value doesn't survive a string-typed pipeline parameter reliably. Normalize
+    -- both to a bare '{}' rather than NULL: JSON_MODIFY(NULL, ...) always returns NULL, no
+    -- matter how many merges follow, so a NULL/blank Task would make this proc return NULL
+    -- outright -- and any notebook whose ParametersJson override arrives as NULL/"null" then
+    -- crashes on its own json.loads(...)/.get(...) calls. '{}' merges normally and this proc
+    -- always hands back real, parseable JSON, whether or not the Task has anything configured.
     IF LTRIM(RTRIM(ISNULL(@ParametersJson, ''))) = ''
-        SET @ParametersJson = NULL;
+        SET @ParametersJson = '{}';
 
     DECLARE @Result nvarchar(max) = @ParametersJson;
 
