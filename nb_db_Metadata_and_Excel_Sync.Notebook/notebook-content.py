@@ -594,6 +594,30 @@ def CompareSQLAndExcel(workbook_path=WORKBOOK_PATH, conn=None):
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# CELL ********************
+
+def ShowExcelJobTasks(workbook_path=WORKBOOK_PATH):
+    """Read-only. Displays the workbook's Jobs and Tasks sheets as two
+    separate tables, exactly as they currently exist in orch_metadata.xlsx --
+    doesn't touch the database or the workbook."""
+    import pandas as pd
+
+    wb = openpyxl.load_workbook(workbook_path, data_only=True)
+    for table_name in ("Jobs", "Tasks"):
+        spec = next(s for s in TABLE_SPECS if s["table"] == table_name)
+        ws = wb[spec["sheet"]]
+        rows = _read_table_rows(ws, f"tbl{spec['sheet']}")
+        df = pd.DataFrame(rows, columns=spec["columns"])
+        print(f"--- {table_name} ({len(df)} rows) ---")
+        display(df)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ### Usage - Comment / un-comment one function as needed
