@@ -9,7 +9,7 @@
 
 ## Schema: `orch`
 
-Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. All seven tables (`Jobs`, `Tasks`, `TaskType`, `ObjectIDs`, `DependencyCondition`, `JobDependencies`, `TaskDependencies`) are kept in sync with `orch_metadata.xlsx` via `nb_db_Metadata_and_Excel` (`SyncSQLToExcel`, `SyncExcelToSQL`, `CompareSQLAndExcel`) — `TABLE_SPECS` lists them parent-first (`DependencyCondition` before the two dependency-edge tables, which reference it) so inserts and deletes respect the foreign keys. `orch.TaskWatermark` is deliberately left out of that sync -- it's runtime execution state, not authored metadata.
+Tables that define *what should run* — jobs, the tasks that make them up, the dependency graph between them, and the small reference tables that constrain and resolve them. All eight tables (`Jobs`, `Tasks`, `TaskParameters`, `TaskType`, `ObjectIDs`, `DependencyCondition`, `JobDependencies`, `TaskDependencies`) are kept in sync with `orch_metadata.xlsx` via `nb_db_Metadata_and_Excel` (`SyncSQLToExcel`, `SyncExcelToSQL`, `CompareSQLAndExcel`) — `TABLE_SPECS` lists them parent-first (`DependencyCondition` before the two dependency-edge tables, which reference it) so inserts and deletes respect the foreign keys. `orch.TaskWatermark` and `orch.WatermarkDataType` are deliberately left out of that sync -- they're runtime execution state, not authored metadata.
 
 ### orch.Jobs
 
@@ -65,7 +65,21 @@ One row per individual unit of work (a Task) belonging to a Job — e.g., a sing
 
 `orch.spGetNextWave` already selects each ready task's `LoggingLevel` into `TasksJson`; the two Wave Runner pipelines now forward `item().LoggingLevel` into `pl_Task_Executor` as a pipeline parameter, which passes it into every `log.spLogTaskRunEvent`/`log.spLogActivityRunEvent` call for that task.
 
-**Renaming a Task:** `orch.spRenameTask @OldTaskName, @NewTaskName` — same pattern as `orch.spRenameJob`. `TaskName` is a clustered PK with `NO ACTION` foreign keys pointing at it (`TaskWatermark`, `TaskDependencies`), so the proc inserts a new `Tasks` row under the new name first; only once that row exists can `TaskWatermark.TaskName` be repointed. `TaskWatermark.TaskName` is FK-only now (no longer also that table's PK — see below), so every historical row for the Task is simply `UPDATE`d to the new name in one statement. It then repoints both sides of `TaskDependencies`, any other Task's JSON-array `Dependencies` that names the old value, updates the denormalized `TaskName` in `log.RunLog`/`log.TaskRunEvent`/`log.ActivityRunEvent`, then deletes the old row — all inside one transaction. Throws if `@OldTaskName` doesn't exist or `@NewTaskName` is already taken.
+**Renaming a Task:** `orch.spRenameTask @OldTaskName, @NewTaskName` — same pattern as `orch.spRenameJob`. `TaskName` is a clustered PK with `NO ACTION` foreign keys pointing at it (`TaskWatermark`, `TaskParameters`, `TaskDependencies`), so the proc inserts a new `Tasks` row under the new name first; only once that row exists can those children be repointed. `TaskWatermark.TaskName` and `TaskParameters.TaskName` are FK-only (neither is also that table's own PK), so every row for the Task in each is simply `UPDATE`d to the new name in one statement per table. It then repoints both sides of `TaskDependencies`, any other Task's JSON-array `Dependencies` that names the old value, updates the denormalized `TaskName` in `log.RunLog`/`log.TaskRunEvent`/`log.ActivityRunEvent`, then deletes the old row — all inside one transaction. Throws if `@OldTaskName` doesn't exist or `@NewTaskName` is already taken.
+
+### orch.TaskParameters
+
+Hand-authored key/value parameters per Task, one row per `(TaskName, ParameterName)` pair — an alternative way to build up a Task's `ParametersJson` a field at a time in Excel instead of hand-writing the whole JSON string in one `orch.Tasks.ParametersJson` cell. Has its own sheet (`TaskParameters`) in `orch_metadata.xlsx`, synced like every other managed table via `nb_db_Metadata_and_Excel_Sync`'s `TABLE_SPECS` — the sheet's `TaskName` column has a List data validation drop-down sourced from the existing `TaskNameList` defined name (`Tasks!$A$2:...`), the same mechanism the `Tasks` sheet's own `JobName`/`ObjectName`/`WorkspaceName` columns already use.
+
+| Column | Data Type | Purpose |
+|---|---|---|
+| TaskName | VARCHAR(200) NOT NULL | **Part of the composite primary key. Foreign key** to `orch.Tasks`. |
+| ParameterName | VARCHAR(200) NOT NULL | **Part of the composite primary key.** The JSON key this row supplies — becomes `ParameterName` in `orch.Tasks.ParametersJson`'s object once `orch.spUpdateTaskParameters` runs. |
+| Value | VARCHAR(200) NOT NULL | The value for that key, always written into the JSON as a string (matching how every notebook that reads `ParametersJson` already consumes these fields via Python's `.get(...)`) — never inferred as a JSON number or boolean. |
+
+**Constraints:** `PRIMARY KEY CLUSTERED (TaskName, ParameterName)`; `FK_TaskParameters_Task FOREIGN KEY (TaskName) REFERENCES orch.Tasks`.
+
+**`orch.spUpdateTaskParameters @TaskName = NULL`** rebuilds `orch.Tasks.ParametersJson` from this table's rows: for each `TaskName` in scope (every Task with at least one row here, or just `@TaskName` if given), it aggregates that Task's `(ParameterName, Value)` pairs into one flat JSON object (alphabetical key order) and overwrites `orch.Tasks.ParametersJson` with it — a full replace of that column's value, not a merge with whatever was there before. Uses `STRING_AGG`/`STRING_ESCAPE(..., 'json')` to build the object set-based (no cursor), so a `Value` or `ParameterName` containing quotes or backslashes is escaped correctly rather than producing invalid JSON. A Task with no rows here at all is simply skipped (its existing `ParametersJson` is left untouched, whatever it currently is) — this proc only ever touches Tasks it has rows for.
 
 ### orch.WatermarkDataType
 

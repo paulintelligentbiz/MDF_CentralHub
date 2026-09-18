@@ -20,6 +20,11 @@ erDiagram
         varchar TaskType FK
         tinyint LoggingLevel FK
     }
+    TaskParameters {
+        varchar TaskName PK,FK
+        varchar ParameterName PK
+        varchar Value
+    }
     TaskWatermark {
         bigint TaskWatermarkId PK
         varchar TaskName FK
@@ -101,6 +106,7 @@ erDiagram
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Job (WorkspaceName, JobName)"
     Tasks }o--|| ObjectIDs : "FK_Tasks_ObjectIDs_Object (WorkspaceName, ObjectName)"
     Tasks }o--|| TaskType : "is of type"
+    Tasks ||--o{ TaskParameters : "key/value rows -> built into ParametersJson"
     Tasks ||--o{ TaskWatermark : "history of watermark advances (0..1 current row)"
     TaskWatermark }o--|| WatermarkDataType : "WatermarkDataType"
 

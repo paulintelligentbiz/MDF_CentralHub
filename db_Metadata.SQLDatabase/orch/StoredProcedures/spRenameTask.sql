@@ -18,9 +18,10 @@ BEGIN
         BEGIN TRANSACTION;
 
         -- Tasks.TaskName is a clustered PK with NO ACTION foreign keys pointing at it
-        -- (TaskWatermark, TaskDependencies), so it can't be UPDATEd in place while those
-        -- children still reference the old value. Insert the renamed row first, repoint
-        -- every reference to it, then delete the old row once nothing points at it anymore.
+        -- (TaskWatermark, TaskParameters, TaskDependencies), so it can't be UPDATEd in place
+        -- while those children still reference the old value. Insert the renamed row first,
+        -- repoint every reference to it, then delete the old row once nothing points at it
+        -- anymore.
         INSERT INTO orch.Tasks (TaskName, Include, JobName, ObjectName, WorkspaceName,
             TimeoutInSeconds, Retries, RetryIntervalInSeconds, UpdateOption, ParametersJson,
             Dependencies, TaskType, System, Layer, LoggingLevel)
@@ -36,6 +37,11 @@ BEGIN
         -- would if it weren't for the FK: the new Tasks row above already exists by the time
         -- this runs, so the FK is satisfied throughout.
         UPDATE orch.TaskWatermark SET TaskName = @NewTaskName WHERE TaskName = @OldTaskName;
+
+        -- TaskParameters.TaskName is also an FK-only column (PK is (TaskName, ParameterName)),
+        -- same reasoning as TaskWatermark above -- a plain UPDATE repoints every parameter row
+        -- for this Task at once.
+        UPDATE orch.TaskParameters SET TaskName = @NewTaskName WHERE TaskName = @OldTaskName;
 
         UPDATE orch.TaskDependencies SET TaskName = @NewTaskName WHERE TaskName = @OldTaskName;
         UPDATE orch.TaskDependencies SET DependentTaskName = @NewTaskName WHERE DependentTaskName = @OldTaskName;

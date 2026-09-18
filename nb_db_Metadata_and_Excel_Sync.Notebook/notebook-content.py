@@ -237,8 +237,8 @@ def _resolve_object_ids(distinct_pairs):
 # Column order matches db_Metadata.SQLDatabase/orch/Tables/*.sql. This order is
 # parent-first -- safe for SyncExcelToSQL's inserts; reversed, it's child-first
 # -- safe for its deletes. (Doesn't need to match the workbook's sheet tab
-# order, which is Jobs/Tasks/JobDependencies/TaskDependencies/DependencyCondition/
-# TaskType/ObjectIDs -- sheets are looked up by name, not position.)
+# order, which is Jobs/Tasks/TaskParameters/JobDependencies/TaskDependencies/
+# DependencyCondition/TaskType/ObjectIDs -- sheets are looked up by name, not position.)
 
 TABLE_SPECS = [
     {
@@ -280,6 +280,13 @@ TABLE_SPECS = [
                     "ParametersJson", "Dependencies", "TaskType", "System", "Layer",
                     "LoggingLevel"],
         "bit_columns": ["Include"],
+        "time_columns": [],
+    },
+    {
+        "sheet": "TaskParameters", "schema": "orch", "table": "TaskParameters",
+        "pk": ["TaskName", "ParameterName"],
+        "columns": ["TaskName", "ParameterName", "Value"],
+        "bit_columns": [],
         "time_columns": [],
     },
     {
