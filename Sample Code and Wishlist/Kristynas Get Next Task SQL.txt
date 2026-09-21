@@ -1,0 +1,74 @@
+/*==============================================================
+ etl.sp_GandalfGetReadyProcesses (WH_EDgage)
+ --------------------------------------------------------------
+ Returns processes that can run RIGHT NOW:
+   - enabled, matching the optional single-process filter
+   - due per cadence (EveryRun, or Daily not yet run today,
+     or @ForceRunAll)
+   - not already Started or Succeeded in THIS PipelineRunId
+   - every dependency that is ITSELF due this run has already
+     Succeeded this run
+ A dependency that isn't due this run does not block (matches
+ the old wave behavior where skipped prereqs didn't gate).
+ A dependency that is due but Failed never Succeeds, so its
+ dependents stay unready and simply never run - the pipeline
+ loop ends when this returns no rows.
+
+ 7/22/26 KF - Replaced the #Due temp table with a CTE. Temp
+   tables are not supported in Fabric Warehouse distributed
+   processing mode (error 15816) when the proc is read through
+   a pipeline Lookup. Logic is unchanged; Due is now a CTE
+   referenced twice in a single statement.
+==============================================================*/
+
+CREATE OR ALTER   PROCEDURE etl.sp_GandalfGetReadyProcesses
+  @PipelineRunId varchar(50)
+ ,@ForceRunAll bit = 0
+ ,@ProcessId int = -1
+AS
+BEGIN
+ WITH Due AS
+ (
+  SELECT
+    g.ProcessId
+   ,g.ProcessName
+   ,g.ProcedureName
+   ,g.SourceName
+   ,g.SortOrder
+  FROM etl.Gandalf g
+  WHERE g.IsEnabled = 1
+    AND (@ProcessId = -1 OR g.ProcessId = @ProcessId)
+    AND (
+     @ForceRunAll = 1
+     OR g.Cadence = 'EveryRun'
+     OR (g.Cadence = 'Daily' AND (g.LastRunDateUTC IS NULL OR CAST(g.LastRunDateUTC AS date) < CAST(SYSUTCDATETIME() AS date)))
+     )
+ )
+ SELECT
+   d.ProcessId
+  ,d.ProcessName
+  ,d.ProcedureName
+  ,d.SourceName
+ FROM Due d
+ WHERE NOT EXISTS (
+   SELECT 1
+   FROM log.Audit a
+   WHERE a.PipelineRunId = @PipelineRunId
+     AND a.ProcessId = d.ProcessId
+     AND a.Status IN ('Started', 'Succeeded')
+    )
+   AND NOT EXISTS (
+   SELECT 1
+   FROM etl.GandalfDependency dep
+   INNER JOIN Due dd ON dd.ProcessId = dep.DependsOnProcessId
+   WHERE dep.ProcessId = d.ProcessId
+     AND NOT EXISTS (
+     SELECT 1
+     FROM log.Audit a2
+     WHERE a2.PipelineRunId = @PipelineRunId
+       AND a2.ProcessId = dep.DependsOnProcessId
+       AND a2.Status = 'Succeeded'
+      )
+    )
+ ORDER BY d.SortOrder;
+END
