@@ -11,6 +11,15 @@ BEGIN
     IF @NotebookExitJson IS NULL OR LTRIM(RTRIM(@NotebookExitJson)) = ''
         RETURN;  -- not watermark-tracked -- no watermark to advance
 
+    -- pl_Task_Executor's "Advance Task Watermark" step forwards every Notebook Task's exit
+    -- value here unconditionally, regardless of whether that Task is actually part of the
+    -- orch.TaskWatermark system at all (e.g. nb_Bronze_Generic isn't -- it tracks its own
+    -- per-topic offsets elsewhere -- but still calls notebook.exit(...) with something). A
+    -- non-JSON exit value used to reach JSON_VALUE below and crash the whole pipeline step with
+    -- "JSON text is not properly formatted" instead of just being irrelevant to this proc.
+    IF ISJSON(@NotebookExitJson) = 0
+        RETURN;  -- not a JSON payload -- not something this proc can be advancing a watermark from
+
     -- Stored and read as plain text (orch.TaskWatermark.WatermarkValue is NVARCHAR, not a
     -- typed column) -- WatermarkDataType is metadata about how to interpret/compare the value,
     -- not something this proc converts through, since a 'Char' watermark isn't a date or a

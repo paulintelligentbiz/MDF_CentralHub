@@ -307,7 +307,15 @@ log_process_metrics(
 # -- Synapse - mssparkutils
 # mssparkutils.notebook.exit(offset_updates)
 # -- Fabric - notebookutils
-notebookutils.notebook.exit(offset_updates)
+# json.dumps, not the raw list of tuples -- pl_Task_Executor's "Advance Task Watermark" step
+# forwards every Notebook Task's exit value into orch.spAdvanceTaskWatermark unconditionally,
+# and that proc parses it as JSON. A Python tuple's str() repr ("('Animal Welfare', '15852')")
+# isn't valid JSON, so the raw list crashed that step with "Unexpected character '('" as soon as
+# this notebook got wired up as an orch.Tasks Notebook Task (it wasn't originally called that
+# way). This isn't part of the single-value orch.TaskWatermark system at all -- these are
+# per-topic offsets -- but as long as the payload is valid JSON, spAdvanceTaskWatermark's own
+# "no $.newWatermarkValue key present" check already no-ops on it cleanly.
+notebookutils.notebook.exit(json.dumps(offset_updates))
 
 # METADATA ********************
 
